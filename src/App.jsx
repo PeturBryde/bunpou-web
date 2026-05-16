@@ -15,7 +15,12 @@ export default function App() {
     supabase.auth.getUser().then(({ data, error: getUserError }) => {
       if (!mounted) return
       if (getUserError) {
-        setError(getUserError.message)
+        const isMissingSessionError = getUserError.name === 'AuthSessionMissingError' || getUserError.message === 'Auth session missing!'
+
+        if (!isMissingSessionError) {
+          setError(getUserError.message)
+        }
+        setUser(null)
       } else {
         setUser(data.user)
       }
