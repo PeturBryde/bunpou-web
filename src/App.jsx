@@ -1,8 +1,25 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './supabase'
 
+const DRILL_PROGRESS_KEY = 'bunpouWeb.drillProgress.v1'
+
 function buildAssetUrl(path) {
   return `${import.meta.env.BASE_URL}${path}`
+}
+
+function readDrillProgress() {
+  try {
+    const raw = localStorage.getItem(DRILL_PROGRESS_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return typeof parsed === 'object' && parsed !== null ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeDrillProgress(progressByUid) {
+  localStorage.setItem(DRILL_PROGRESS_KEY, JSON.stringify(progressByUid))
 }
 
 export default function App() {
@@ -23,6 +40,7 @@ export default function App() {
 
   const [answers, setAnswers] = useState({})
   const [submitMessage, setSubmitMessage] = useState('')
+  const [completedDrills, setCompletedDrills] = useState({})
 
   useEffect(() => {
     let mounted = true
@@ -60,8 +78,15 @@ export default function App() {
       setDrillError('')
       setAnswers({})
       setSubmitMessage('')
+      setCompletedDrills({})
       return
     }
+
+    const localProgress = readDrillProgress()
+    const completed = Object.fromEntries(
+      Object.entries(localProgress).filter(([, progress]) => Boolean(progress?.completed))
+    )
+    setCompletedDrills(completed)
 
     let active = true
     setManifestLoading(true)
@@ -133,7 +158,14 @@ export default function App() {
         throw new Error(`Could not load drill (${response.status}).`)
       }
       const drillData = await response.json()
+      const progressByUid = readDrillProgress()
+      const existingProgress = progressByUid[drillData.drill_uid]
+
       setSelectedDrill(drillData)
+      setAnswers(existingProgress?.answers ?? {})
+      if (existingProgress?.completed) {
+        setSubmitMessage('Answers captured. Grading comes in the next milestone.')
+      }
     } catch (openDrillError) {
       setDrillError(openDrillError.message)
     } finally {
@@ -141,23 +173,73 @@ export default function App() {
     }
   }
 
+  function persistAnswers(nextAnswers) {
+    if (!selectedDrill?.drill_uid) return
+    const progressByUid = readDrillProgress()
+    const currentProgress = progressByUid[selectedDrill.drill_uid] ?? {}
+    progressByUid[selectedDrill.drill_uid] = {
+      ...currentProgress,
+      answers: nextAnswers,
+      completed: Boolean(currentProgress.completed),
+    }
+    writeDrillProgress(progressByUid)
+  }
+
   function handleChoiceChange(questionId, choiceId) {
-    setAnswers((previous) => ({ ...previous, [questionId]: choiceId }))
+    setAnswers((previous) => {
+      const nextAnswers = { ...previous, [questionId]: choiceId }
+      persistAnswers(nextAnswers)
+      return nextAnswers
+    })
   }
 
   function handleTextChange(questionId, value) {
-    setAnswers((previous) => ({ ...previous, [questionId]: value }))
+    setAnswers((previous) => {
+      const nextAnswers = { ...previous, [questionId]: value }
+      persistAnswers(nextAnswers)
+      return nextAnswers
+    })
   }
 
   function clearAnswers() {
+    if (!selectedDrill?.drill_uid) return
     setAnswers({})
     setSubmitMessage('')
+    const progressByUid = readDrillProgress()
+    const currentProgress = progressByUid[selectedDrill.drill_uid] ?? {}
+    progressByUid[selectedDrill.drill_uid] = {
+      ...currentProgress,
+      answers: {},
+      completed: false,
+    }
+    writeDrillProgress(progressByUid)
+    setCompletedDrills((previous) => {
+      const next = { ...previous }
+      delete next[selectedDrill.drill_uid]
+      return next
+    })
   }
 
   function submitDrill(event) {
     event.preventDefault()
+    if (!selectedDrill?.drill_uid) return
+
+    const progressByUid = readDrillProgress()
+    progressByUid[selectedDrill.drill_uid] = {
+      answers,
+      completed: true,
+      completedAt: new Date().toISOString(),
+    }
+    writeDrillProgress(progressByUid)
+
+    setCompletedDrills((previous) => ({
+      ...previous,
+      [selectedDrill.drill_uid]: progressByUid[selectedDrill.drill_uid],
+    }))
     setSubmitMessage('Answers captured. Grading comes in the next milestone.')
   }
+
+  const isSelectedDrillCompleted = Boolean(selectedDrill?.drill_uid && completedDrills[selectedDrill.drill_uid])
 
   return (
     <main className="page">
@@ -177,16 +259,20 @@ export default function App() {
               <div className="drill-list" aria-live="polite">
                 <h2>Available drills</h2>
                 {manifest.drills?.length ? (
-                  manifest.drills.map((drill) => (
-                    <article key={drill.drill_uid} className="drill-card">
-                      <h3>{drill.title}</h3>
-                      <p>{drill.description}</p>
-                      <p className="meta">Questions: {drill.question_count}</p>
-                      <button type="button" onClick={() => openDrill(drill.path)} disabled={drillLoading}>
-                        Open drill
-                      </button>
-                    </article>
-                  ))
+                  manifest.drills.map((drill) => {
+                    const isCompleted = Boolean(completedDrills[drill.drill_uid])
+                    return (
+                      <article key={drill.drill_uid} className="drill-card">
+                        <h3>{drill.title}</h3>
+                        <p>{drill.description}</p>
+                        <p className="meta">Questions: {drill.question_count}</p>
+                        {isCompleted ? <p className="status-badge" aria-label="Completed">Completed</p> : null}
+                        <button type="button" onClick={() => openDrill(drill.path)} disabled={drillLoading}>
+                          {isCompleted ? 'Review drill' : 'Open drill'}
+                        </button>
+                      </article>
+                    )
+                  })
                 ) : (
                   <p className="status">No drills found.</p>
                 )}
@@ -201,25 +287,34 @@ export default function App() {
                 <h2>{selectedDrill.title}</h2>
                 <p>{selectedDrill.description}</p>
                 <p className="meta">Question count: {selectedDrill.question_count}</p>
+                {isSelectedDrillCompleted ? <p className="status-badge">Completed (read only)</p> : null}
 
                 {selectedDrill.questions.map((question, index) => (
-                  <fieldset key={question.question_id} className="question-block">
-                    <legend>{index + 1}. {question.prompt}</legend>
+                  <fieldset key={question.question_id} className="question-block" disabled={isSelectedDrillCompleted}>
+                    <p className="question-label">Question {index + 1}</p>
+                    <p className="question-prompt">{question.prompt}</p>
 
                     {question.type === 'multiple_choice' ? (
                       <div className="choices">
-                        {question.choices.map((choice) => (
-                          <label key={choice.choice_id} className="choice-row">
-                            <input
-                              type="radio"
-                              name={question.question_id}
-                              value={choice.choice_id}
-                              checked={answers[question.question_id] === choice.choice_id}
-                              onChange={() => handleChoiceChange(question.question_id, choice.choice_id)}
-                            />
-                            <span>{choice.choice_id}. {choice.text}</span>
-                          </label>
-                        ))}
+                        {question.choices.map((choice) => {
+                          const isChecked = answers[question.question_id] === choice.choice_id
+                          return (
+                            <label
+                              key={choice.choice_id}
+                              className={`choice-row ${isChecked ? 'choice-row-selected' : ''}`}
+                            >
+                              <input
+                                type="radio"
+                                name={question.question_id}
+                                value={choice.choice_id}
+                                checked={isChecked}
+                                onChange={() => handleChoiceChange(question.question_id, choice.choice_id)}
+                                disabled={isSelectedDrillCompleted}
+                              />
+                              <span>{choice.choice_id}. {choice.text}</span>
+                            </label>
+                          )
+                        })}
                       </div>
                     ) : (
                       <input
@@ -227,6 +322,7 @@ export default function App() {
                         value={answers[question.question_id] ?? ''}
                         onChange={(event) => handleTextChange(question.question_id, event.target.value)}
                         placeholder="Type your answer"
+                        disabled={isSelectedDrillCompleted}
                       />
                     )}
                   </fieldset>
@@ -234,8 +330,8 @@ export default function App() {
 
                 <div className="button-row">
                   <button type="button" onClick={() => setSelectedDrill(null)}>Back to drill list</button>
-                  <button type="button" onClick={clearAnswers}>Clear answers</button>
-                  <button type="submit">Submit</button>
+                  <button type="button" onClick={clearAnswers} disabled={isSelectedDrillCompleted}>Clear answers</button>
+                  <button type="submit" disabled={isSelectedDrillCompleted}>Submit</button>
                 </div>
 
                 {submitMessage ? <p className="status success">{submitMessage}</p> : null}
