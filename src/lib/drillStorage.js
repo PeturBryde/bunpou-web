@@ -4,6 +4,7 @@ export function readLocalProgress() {
   try {
     const raw = localStorage.getItem(DRILL_PROGRESS_KEY)
     if (!raw) return {}
+
     const parsed = JSON.parse(raw)
     return typeof parsed === 'object' && parsed !== null ? parsed : {}
   } catch {
@@ -39,7 +40,7 @@ export async function loadProgressMap(supabase, userId) {
 export async function loadAttemptMap(supabase, userId) {
   const { data, error } = await supabase
     .from('drill_attempts')
-    .select('drill_uid,drill_version,result_json,summary_json,completed_at')
+    .select('attempt_id,drill_uid,drill_version,result_json,summary_json,completed_at')
     .eq('user_id', userId)
 
   if (error) throw error
@@ -49,7 +50,7 @@ export async function loadAttemptMap(supabase, userId) {
       row.drill_uid,
       {
         completed: row.result_json?.completed ?? true,
-        attempt_id: row.result_json?.attempt_id ?? null,
+        attempt_id: row.attempt_id ?? row.result_json?.attempt_id ?? null,
         drill_uid: row.drill_uid,
         drill_version: row.drill_version,
         answers: row.result_json?.answers ?? {},
@@ -75,6 +76,11 @@ export async function saveDrillProgress(supabase, userId, drillUid, drillVersion
 }
 
 export async function deleteDrillProgress(supabase, userId, drillUid) {
-  const { error } = await supabase.from('drill_progress').delete().eq('user_id', userId).eq('drill_uid', drillUid)
+  const { error } = await supabase
+    .from('drill_progress')
+    .delete()
+    .eq('user_id', userId)
+    .eq('drill_uid', drillUid)
+
   if (error) throw error
 }
