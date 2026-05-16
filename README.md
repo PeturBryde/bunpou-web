@@ -2,6 +2,8 @@
 
 Experimental frontend for grammar exercises with progress tracking.
 
+In-progress drill answers are persisted to Supabase `public.drill_progress` for signed-in users, with `localStorage` kept as a fallback/cache during development.
+
 ## Local development
 
 1. Install dependencies:
