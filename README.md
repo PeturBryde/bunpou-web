@@ -4,6 +4,8 @@ Experimental frontend for grammar exercises with progress tracking.
 
 In-progress drill answers are persisted to Supabase `public.drill_progress` for signed-in users, with `localStorage` kept as a fallback/cache during development.
 
+Completed attempts are now saved to Supabase `public.drill_attempts`. Retakes are intentionally blocked by the database unique constraint on `(user_id, drill_uid)`, and the existing completed attempt is shown as read-only.
+
 ## Local development
 
 1. Install dependencies:

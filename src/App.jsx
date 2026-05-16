@@ -5,6 +5,7 @@ import {
   loadAttemptMap,
   loadProgressMap,
   readLocalProgress,
+  saveDrillAttempt,
   saveDrillProgress,
   writeLocalProgress,
 } from './lib/drillStorage'
@@ -79,7 +80,7 @@ function gradeDrill(drill, answers) {
   const totalScore = perQuestion.reduce((sum, result) => sum + result.score, 0)
 
   return {
-    attempt_id: `attempt_${crypto.randomUUID()}`,
+    attempt_id: `attempt_${drill.drill_uid}_${new Date().toISOString().replace(/[^\d]/g, '')}`,
     drill_uid: drill.drill_uid,
     drill_version: drill.version,
     completed_at: new Date().toISOString(),
@@ -370,14 +371,56 @@ export default function App() {
 
   function submitDrill(event) {
     event.preventDefault()
-    if (!selectedDrill?.drill_uid) return
-    const gradedAttempt = gradeDrill(selectedDrill, answers)
-    const progressByUid = readLocalProgress()
-    progressByUid[selectedDrill.drill_uid] = gradedAttempt
-    writeLocalProgress(progressByUid)
-    setCompletedDrills((previous) => ({ ...previous, [selectedDrill.drill_uid]: gradedAttempt }))
-    setAttemptResult(gradedAttempt)
-    setSubmitMessage('Submitted. Website grading complete. Short-completion grading is preliminary.')
+    if (!selectedDrill?.drill_uid || !user?.id || submitting) return
+
+    const submitAttempt = async () => {
+      setSubmitting(true)
+      setSubmitMessage('')
+      const completedAttempt = gradeDrill(selectedDrill, answers)
+
+      try {
+        const savedAttempt = await saveDrillAttempt(supabase, user.id, completedAttempt)
+        await deleteDrillProgress(supabase, user.id, selectedDrill.drill_uid)
+
+        const progressByUid = readLocalProgress()
+        progressByUid[selectedDrill.drill_uid] = savedAttempt
+        writeLocalProgress(progressByUid)
+
+        setProgressDrills((previous) => {
+          const next = { ...previous }
+          delete next[selectedDrill.drill_uid]
+          return next
+        })
+        setCompletedDrills((previous) => ({ ...previous, [selectedDrill.drill_uid]: savedAttempt }))
+        setAttemptResult(savedAttempt)
+        setSubmitMessage('Submitted. Website grading complete. Short-completion grading is preliminary.')
+      } catch (submitError) {
+        const isDuplicateAttempt = submitError?.code === '23505'
+          || submitError?.message?.includes('drill_attempts_user_id_drill_uid_key')
+          || submitError?.message?.includes('duplicate key value')
+
+        if (isDuplicateAttempt) {
+          try {
+            const remoteAttempts = await loadAttemptMap(supabase, user.id)
+            const existingAttempt = remoteAttempts[selectedDrill.drill_uid]
+            if (existingAttempt) {
+              setCompletedDrills((previous) => ({ ...previous, [selectedDrill.drill_uid]: existingAttempt }))
+              setAttemptResult(existingAttempt)
+              setAnswers(existingAttempt.answers ?? {})
+            }
+          } catch (loadError) {
+            console.warn('Could not reload duplicate remote attempt.', loadError)
+          }
+          setSubmitMessage('This exercise has already been completed. Retakes are not supported.')
+        } else {
+          setSubmitMessage('Could not save completed attempt. Your answers are still saved as in progress. Please try again.')
+        }
+      } finally {
+        setSubmitting(false)
+      }
+    }
+
+    submitAttempt()
   }
 
   const resultMap = useMemo(() => Object.fromEntries((attemptResult?.results ?? []).map((result) => [result.question_id, result])), [attemptResult])
@@ -428,7 +471,7 @@ export default function App() {
           {result ? <div className="result-panel"><p className={`result-status ${result.is_correct ? 'result-correct' : 'result-needs-review'}`}>{result.is_correct ? 'Correct' : result.website_result === 'needs_review' ? 'Needs review (website)' : 'Incorrect'} • {result.score}/{result.max_score}</p><p>Your answer: <strong>{String(result.user_answer ?? '—') || '—'}</strong></p>{question.type === 'multiple_choice' ? <p>Correct choice: <strong>{correctChoice ? `${correctChoice.choice_id}. ${correctChoice.text}` : question.answer?.correct_choice_id}</strong></p> : <><p>Accepted answers: <strong>{(question.answer?.accepted_answers ?? []).join(' / ')}</strong></p><p className="preliminary-note">Website grading for typed answers is preliminary and may be revised later.</p></>}<p>Explanation: {question.explanation}</p></div> : null}
         </fieldset>
       })}
-      <div className="button-row"><button type="button" onClick={clearExerciseHash}>Back to exercise list</button><button type="button" onClick={clearAnswers} disabled={isSelectedDrillCompleted}>Clear answers</button><button type="submit" disabled={isSelectedDrillCompleted}>Submit</button></div>
+      <div className="button-row"><button type="button" onClick={clearExerciseHash}>Back to exercise list</button><button type="button" onClick={clearAnswers} disabled={isSelectedDrillCompleted || submitting}>Clear answers</button><button type="submit" disabled={isSelectedDrillCompleted || submitting}>{submitting ? 'Submitting…' : 'Submit'}</button></div>
       {submitMessage ? <p className="status success">{submitMessage}</p> : null}
     </form> : null}
     <button type="button" onClick={handleLogout} disabled={submitting}>{submitting ? 'Logging out...' : 'Logout'}</button></div> : <form className="form" onSubmit={handleSubmit}><label htmlFor="email">Email</label><input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /><label htmlFor="password">Password</label><input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /><button type="submit" disabled={submitting}>{submitting ? 'Logging in...' : 'Login'}</button></form>}
