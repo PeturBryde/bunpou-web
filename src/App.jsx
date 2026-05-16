@@ -453,9 +453,9 @@ export default function App() {
       {manifest.drills?.length ? manifest.drills.map((drill) => {
         const completed = completedDrills[drill.drill_uid]
         const inProgress = progressDrills[drill.drill_uid]
-        const scoreText = completed?.summary ? `Completed: ${completed.summary.website_score}/${completed.summary.max_score}` : 'Completed'
-        const statusText = completed ? scoreText : inProgress ? 'In progress' : 'Not started'
-        return <article key={drill.drill_uid} className="drill-card"><h3>{drill.title}</h3><p>{drill.description}</p><p className="meta">Questions: {drill.question_count}</p><p className="status-badge">{statusText}</p><button type="button" onClick={() => { setHashWarning(''); setExerciseHash(drill.drill_uid) }} disabled={drillLoading}>{completed ? 'Review exercise' : 'Open exercise'}</button></article>
+        const statusText = completed ? 'Completed' : inProgress ? 'In progress' : 'Not started'
+        const ctaText = completed ? 'Review exercise' : inProgress ? 'Continue exercise' : 'Start exercise'
+        return <article key={drill.drill_uid} className="drill-card"><h3>{drill.title}</h3><p>{drill.description}</p><div className="drill-meta-row"><p className="meta"><span className="meta-label">Questions:</span> {drill.question_count}</p><p className="meta"><span className="meta-label">Status:</span> {statusText}</p>{completed?.summary ? <p className="meta"><span className="meta-label">Score:</span> {completed.summary.website_score}/{completed.summary.max_score}</p> : null}</div><button type="button" onClick={() => { setHashWarning(''); setExerciseHash(drill.drill_uid) }} disabled={drillLoading}>{ctaText}</button></article>
       }) : <p className="status">No exercises found.</p>}</div> : null}
     {drillLoading ? <p className="status">Loading exercise...</p> : null}
     {drillError ? <p className="error" role="alert">{drillError}</p> : null}

@@ -5,7 +5,7 @@
     {
       "drill_uid": "sample_uchini_review_001",
       "title": "うちに + Review Sample",
-      "description": "Sample drill for rendering multiple-choice and short-completion questions.",
+      "description": "Sample exercise for rendering multiple-choice and short-completion questions.",
       "path": "drills/sample_uchini_review_001.json",
       "status": "active",
       "tags": ["N3", "うちに", "sample"],
