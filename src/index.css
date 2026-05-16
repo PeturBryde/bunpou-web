@@ -67,6 +67,22 @@ h3 {
   padding-top: 0.85rem;
 }
 
+
+.drill-card {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.drill-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+}
+
+.meta-label {
+  font-weight: 600;
+}
+
 .question-label {
   margin: 0;
   font-size: 0.82rem;
