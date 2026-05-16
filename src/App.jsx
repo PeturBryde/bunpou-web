@@ -96,6 +96,7 @@ function gradeDrill(drill, answers) {
 }
 
 export default function App() {
+  const EXERCISE_HASH_KEY = 'exercise'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [user, setUser] = useState(null)
@@ -116,6 +117,7 @@ export default function App() {
   const [completedDrills, setCompletedDrills] = useState({})
   const [progressDrills, setProgressDrills] = useState({})
   const [attemptResult, setAttemptResult] = useState(null)
+  const [hashWarning, setHashWarning] = useState('')
 
   useEffect(() => {
     let mounted = true
@@ -172,7 +174,7 @@ export default function App() {
     fetch(buildAssetUrl('drills/manifest.json'))
       .then(async (response) => {
         if (!response.ok) {
-          throw new Error(`Could not load drill manifest (${response.status}).`)
+          throw new Error(`Could not load exercise manifest (${response.status}).`)
         }
         return response.json()
       })
@@ -238,7 +240,7 @@ export default function App() {
 
     try {
       const response = await fetch(buildAssetUrl(path))
-      if (!response.ok) throw new Error(`Could not load drill (${response.status}).`)
+      if (!response.ok) throw new Error(`Could not load exercise (${response.status}).`)
       const drillData = await response.json()
       const localProgressByUid = readLocalProgress()
       const remoteAttempt = completedDrills[drillData.drill_uid]
@@ -252,7 +254,7 @@ export default function App() {
         if (isAttemptGraded(remoteAttempt)) {
           setSubmitMessage('This submitted attempt is locked. Website grading shown below.')
         } else {
-          setSubmitMessage('This drill was completed before grading was added, so no grading data is available.')
+          setSubmitMessage('This exercise was completed before grading was added, so no grading data is available.')
         }
       } else if (remoteProgress?.answers) {
         setAnswers(remoteProgress.answers)
@@ -265,6 +267,56 @@ export default function App() {
       setDrillLoading(false)
     }
   }
+
+  function setExerciseHash(drillUid) {
+    const nextHash = `${EXERCISE_HASH_KEY}=${encodeURIComponent(drillUid)}`
+    if (window.location.hash.slice(1) !== nextHash) {
+      window.location.hash = nextHash
+    }
+  }
+
+  function clearExerciseHash() {
+    if (window.location.hash) {
+      window.location.hash = ''
+    }
+  }
+
+  function findManifestEntryByUid(drillUid) {
+    return manifest?.drills?.find((item) => item.drill_uid === drillUid) ?? null
+  }
+
+  useEffect(() => {
+    if (!user || !manifest?.drills?.length) return
+
+    function openFromHash() {
+      const hashValue = window.location.hash.replace(/^#/, '')
+      if (!hashValue) {
+        setSelectedDrill(null)
+        setHashWarning('')
+        return
+      }
+
+      const params = new URLSearchParams(hashValue)
+      const hashDrillUid = params.get(EXERCISE_HASH_KEY)
+      if (!hashDrillUid) return
+
+      const drillEntry = findManifestEntryByUid(hashDrillUid)
+      if (!drillEntry) {
+        setSelectedDrill(null)
+        setHashWarning(`Exercise "${hashDrillUid}" was not found.`)
+        return
+      }
+
+      setHashWarning('')
+      if (selectedDrill?.drill_uid !== hashDrillUid) {
+        openDrill(drillEntry.path)
+      }
+    }
+
+    openFromHash()
+    window.addEventListener('hashchange', openFromHash)
+    return () => window.removeEventListener('hashchange', openFromHash)
+  }, [user, manifest, selectedDrill?.drill_uid])
 
   function persistAnswers(nextAnswers) {
     if (!selectedDrill?.drill_uid) return
@@ -348,24 +400,25 @@ export default function App() {
     setSubmitMessage('')
   }
 
-  return <main className="page"><section className="card" aria-busy={loading || submitting}><h1>Bunpou Web</h1><p className="subtitle">Japanese grammar drills</p>
+  return <main className="page"><section className="card" aria-busy={loading || submitting}><h1>Bunpou Web</h1><p className="subtitle">Japanese grammar exercises</p>
   {loading ? <p className="status">Loading session...</p> : user ? <div className="dashboard">
     <p className="status">Signed in as <strong>{user.email}</strong></p>
-    {manifestLoading ? <p className="status">Loading drills...</p> : null}
+    {manifestLoading ? <p className="status">Loading exercises...</p> : null}
     {manifestError ? <p className="error" role="alert">{manifestError}</p> : null}
-    {!manifestLoading && !manifestError && manifest && !selectedDrill ? <div className="drill-list" aria-live="polite"><h2>Available drills</h2>
+    {hashWarning ? <p className="status">{hashWarning}</p> : null}
+    {!manifestLoading && !manifestError && manifest && !selectedDrill ? <div className="drill-list" aria-live="polite"><h2>Available exercises</h2>
       {manifest.drills?.length ? manifest.drills.map((drill) => {
         const completed = completedDrills[drill.drill_uid]
         const inProgress = progressDrills[drill.drill_uid]
         const scoreText = completed?.summary ? `Completed: ${completed.summary.website_score}/${completed.summary.max_score}` : 'Completed'
         const statusText = completed ? scoreText : inProgress ? 'In progress' : 'Not started'
-        return <article key={drill.drill_uid} className="drill-card"><h3>{drill.title}</h3><p>{drill.description}</p><p className="meta">Questions: {drill.question_count}</p><p className="status-badge">{statusText}</p><button type="button" onClick={() => openDrill(drill.path)} disabled={drillLoading}>{completed ? 'Review drill' : 'Open drill'}</button></article>
-      }) : <p className="status">No drills found.</p>}</div> : null}
-    {drillLoading ? <p className="status">Loading drill...</p> : null}
+        return <article key={drill.drill_uid} className="drill-card"><h3>{drill.title}</h3><p>{drill.description}</p><p className="meta">Questions: {drill.question_count}</p><p className="status-badge">{statusText}</p><button type="button" onClick={() => { setHashWarning(''); setExerciseHash(drill.drill_uid) }} disabled={drillLoading}>{completed ? 'Review exercise' : 'Open exercise'}</button></article>
+      }) : <p className="status">No exercises found.</p>}</div> : null}
+    {drillLoading ? <p className="status">Loading exercise...</p> : null}
     {drillError ? <p className="error" role="alert">{drillError}</p> : null}
     {selectedDrill ? <form className="drill-form" onSubmit={submitDrill}><h2>{selectedDrill.title}</h2><p>{selectedDrill.description}</p><p className="meta">Question count: {selectedDrill.question_count}</p>{isSelectedDrillCompleted ? <p className="status-badge">Completed (read only)</p> : null}
       {attemptResult?.summary ? <p className="score-summary">Website score: <strong>{attemptResult.summary.website_score}/{attemptResult.summary.max_score}</strong></p> : null}
-      {isLegacyCompletedWithoutGrading ? <div className="status"><p>This drill was completed before grading was added, so no grading data is available.</p><button type="button" onClick={clearLegacyCompletion}>Clear local completion for this drill</button></div> : null}
+      {isLegacyCompletedWithoutGrading ? <div className="status"><p>This exercise was completed before grading was added, so no grading data is available.</p><button type="button" onClick={clearLegacyCompletion}>Clear local completion for this exercise</button></div> : null}
       {selectedDrill.questions.map((question, index) => {
         const helperLines = Array.isArray(question.helper_text) ? question.helper_text : [question.use ? `Use the verb: ${question.use}` : null, question.intended_meaning ? `Intended meaning: ${question.intended_meaning}` : null].filter(Boolean)
         const result = resultMap[question.question_id]
@@ -375,7 +428,7 @@ export default function App() {
           {result ? <div className="result-panel"><p className={`result-status ${result.is_correct ? 'result-correct' : 'result-needs-review'}`}>{result.is_correct ? 'Correct' : result.website_result === 'needs_review' ? 'Needs review (website)' : 'Incorrect'} • {result.score}/{result.max_score}</p><p>Your answer: <strong>{String(result.user_answer ?? '—') || '—'}</strong></p>{question.type === 'multiple_choice' ? <p>Correct choice: <strong>{correctChoice ? `${correctChoice.choice_id}. ${correctChoice.text}` : question.answer?.correct_choice_id}</strong></p> : <><p>Accepted answers: <strong>{(question.answer?.accepted_answers ?? []).join(' / ')}</strong></p><p className="preliminary-note">Website grading for typed answers is preliminary and may be revised later.</p></>}<p>Explanation: {question.explanation}</p></div> : null}
         </fieldset>
       })}
-      <div className="button-row"><button type="button" onClick={() => setSelectedDrill(null)}>Back to drill list</button><button type="button" onClick={clearAnswers} disabled={isSelectedDrillCompleted}>Clear answers</button><button type="submit" disabled={isSelectedDrillCompleted}>Submit</button></div>
+      <div className="button-row"><button type="button" onClick={clearExerciseHash}>Back to exercise list</button><button type="button" onClick={clearAnswers} disabled={isSelectedDrillCompleted}>Clear answers</button><button type="submit" disabled={isSelectedDrillCompleted}>Submit</button></div>
       {submitMessage ? <p className="status success">{submitMessage}</p> : null}
     </form> : null}
     <button type="button" onClick={handleLogout} disabled={submitting}>{submitting ? 'Logging out...' : 'Logout'}</button></div> : <form className="form" onSubmit={handleSubmit}><label htmlFor="email">Email</label><input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /><label htmlFor="password">Password</label><input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /><button type="submit" disabled={submitting}>{submitting ? 'Logging in...' : 'Login'}</button></form>}
