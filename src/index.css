@@ -205,3 +205,38 @@ details pre {
 .helper-text p {
   margin: 0;
 }
+
+.score-summary {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.result-panel {
+  margin-top: 0.75rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.25);
+  padding-top: 0.65rem;
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.95rem;
+}
+
+.result-panel p {
+  margin: 0;
+}
+
+.result-status {
+  font-weight: 700;
+}
+
+.result-correct {
+  color: #b8ffd0;
+}
+
+.result-needs-review {
+  color: #ffd4a8;
+}
+
+.preliminary-note {
+  opacity: 0.9;
+  font-size: 0.9rem;
+}
