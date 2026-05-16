@@ -22,6 +22,10 @@ function writeDrillProgress(progressByUid) {
   localStorage.setItem(DRILL_PROGRESS_KEY, JSON.stringify(progressByUid))
 }
 
+function isAttemptGraded(attempt) {
+  return Boolean(attempt?.completed && attempt?.summary && Array.isArray(attempt?.results))
+}
+
 function normalizeText(value, normalizeJapanesePunctuation) {
   let normalized = String(value ?? '').replaceAll('　', ' ').trim()
   if (normalizeJapanesePunctuation) {
@@ -233,7 +237,11 @@ export default function App() {
       setAnswers(existingProgress?.answers ?? {})
       if (existingProgress?.completed) {
         setAttemptResult(existingProgress)
-        setSubmitMessage('This submitted attempt is locked. Website grading shown below.')
+        if (isAttemptGraded(existingProgress)) {
+          setSubmitMessage('This submitted attempt is locked. Website grading shown below.')
+        } else {
+          setSubmitMessage('This drill was completed before grading was added, so no grading data is available.')
+        }
       }
     } catch (openDrillError) {
       setDrillError(openDrillError.message)
@@ -286,7 +294,24 @@ export default function App() {
   }
 
   const resultMap = useMemo(() => Object.fromEntries((attemptResult?.results ?? []).map((result) => [result.question_id, result])), [attemptResult])
-  const isSelectedDrillCompleted = Boolean(selectedDrill?.drill_uid && completedDrills[selectedDrill.drill_uid])
+  const selectedDrillProgress = selectedDrill?.drill_uid ? completedDrills[selectedDrill.drill_uid] : null
+  const isSelectedDrillCompleted = isAttemptGraded(selectedDrillProgress)
+  const isLegacyCompletedWithoutGrading = Boolean(selectedDrillProgress?.completed && !isSelectedDrillCompleted)
+
+  function clearLegacyCompletion() {
+    if (!selectedDrill?.drill_uid) return
+    const progressByUid = readDrillProgress()
+    delete progressByUid[selectedDrill.drill_uid]
+    writeDrillProgress(progressByUid)
+    setCompletedDrills((previous) => {
+      const next = { ...previous }
+      delete next[selectedDrill.drill_uid]
+      return next
+    })
+    setAnswers({})
+    setAttemptResult(null)
+    setSubmitMessage('')
+  }
 
   return <main className="page"><section className="card" aria-busy={loading || submitting}><h1>Bunpou Web</h1><p className="subtitle">Japanese grammar drills</p>
   {loading ? <p className="status">Loading session...</p> : user ? <div className="dashboard">
@@ -303,6 +328,7 @@ export default function App() {
     {drillError ? <p className="error" role="alert">{drillError}</p> : null}
     {selectedDrill ? <form className="drill-form" onSubmit={submitDrill}><h2>{selectedDrill.title}</h2><p>{selectedDrill.description}</p><p className="meta">Question count: {selectedDrill.question_count}</p>{isSelectedDrillCompleted ? <p className="status-badge">Completed (read only)</p> : null}
       {attemptResult?.summary ? <p className="score-summary">Website score: <strong>{attemptResult.summary.website_score}/{attemptResult.summary.max_score}</strong></p> : null}
+      {isLegacyCompletedWithoutGrading ? <div className="status"><p>This drill was completed before grading was added, so no grading data is available.</p><button type="button" onClick={clearLegacyCompletion}>Clear local completion for this drill</button></div> : null}
       {selectedDrill.questions.map((question, index) => {
         const helperLines = Array.isArray(question.helper_text) ? question.helper_text : [question.use ? `Use the verb: ${question.use}` : null, question.intended_meaning ? `Intended meaning: ${question.intended_meaning}` : null].filter(Boolean)
         const result = resultMap[question.question_id]
