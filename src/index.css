@@ -23,7 +23,7 @@ body {
 }
 
 .card {
-  width: min(100%, 420px);
+  width: min(100%, 760px);
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 16px;
@@ -36,15 +36,47 @@ h1 {
   font-size: 1.75rem;
 }
 
+h2,
+h3 {
+  margin: 0;
+}
+
 .subtitle {
   margin: 0.25rem 0 1rem;
   opacity: 0.88;
 }
 
 .form,
-.dashboard {
+.dashboard,
+.drill-form,
+.drill-list {
   display: grid;
   gap: 0.75rem;
+}
+
+.drill-card,
+.question-block {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  padding: 0.8rem;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.choice-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.choices {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.button-row {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
 label {
@@ -58,6 +90,11 @@ button {
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.35);
   font-size: 1rem;
+}
+
+input[type='radio'] {
+  width: auto;
+  margin-top: 0.25rem;
 }
 
 input {
@@ -79,8 +116,20 @@ button:disabled {
 }
 
 .status,
-.placeholder {
+.meta {
   margin: 0;
+}
+
+.success {
+  color: #afffc8;
+}
+
+details pre {
+  margin: 0.5rem 0 0;
+  padding: 0.8rem;
+  overflow: auto;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .error {
