@@ -289,7 +289,15 @@ export default function App() {
                 <p className="meta">Question count: {selectedDrill.question_count}</p>
                 {isSelectedDrillCompleted ? <p className="status-badge">Completed (read only)</p> : null}
 
-                {selectedDrill.questions.map((question, index) => (
+                {selectedDrill.questions.map((question, index) => {
+                  const helperLines = Array.isArray(question.helper_text)
+                    ? question.helper_text
+                    : [
+                        question.use ? `Use the verb: ${question.use}` : null,
+                        question.intended_meaning ? `Intended meaning: ${question.intended_meaning}` : null,
+                      ].filter(Boolean)
+
+                  return (
                   <fieldset key={question.question_id} className="question-block" disabled={isSelectedDrillCompleted}>
                     <p className="question-label">Question {index + 1}</p>
                     <p className="question-prompt">{question.prompt}</p>
@@ -317,16 +325,25 @@ export default function App() {
                         })}
                       </div>
                     ) : (
-                      <input
-                        type="text"
-                        value={answers[question.question_id] ?? ''}
-                        onChange={(event) => handleTextChange(question.question_id, event.target.value)}
-                        placeholder="Type your answer"
-                        disabled={isSelectedDrillCompleted}
-                      />
+                      <>
+                        {helperLines.length ? (
+                          <div className="helper-text" aria-label="Hint">
+                            {helperLines.map((line) => (
+                              <p key={line}>{line}</p>
+                            ))}
+                          </div>
+                        ) : null}
+                        <input
+                          type="text"
+                          value={answers[question.question_id] ?? ''}
+                          onChange={(event) => handleTextChange(question.question_id, event.target.value)}
+                          placeholder="Type your answer"
+                          disabled={isSelectedDrillCompleted}
+                        />
+                      </>
                     )}
                   </fieldset>
-                ))}
+                )})}
 
                 <div className="button-row">
                   <button type="button" onClick={() => setSelectedDrill(null)}>Back to drill list</button>

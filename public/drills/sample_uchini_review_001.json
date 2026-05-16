@@ -8,7 +8,11 @@
   "generated_by": "ChatGPT",
   "source_tracker_version": "sample",
   "status": "active",
-  "tags": ["N3", "うちに", "sample"],
+  "tags": [
+    "N3",
+    "うちに",
+    "sample"
+  ],
   "question_count": 4,
   "questions": [
     {
@@ -18,10 +22,22 @@
       "target_title": "うち／ないうち",
       "prompt": "暗くならないうちに、犬の散歩に＿＿。",
       "choices": [
-        {"choice_id": "A", "text": "行ったことがある"},
-        {"choice_id": "B", "text": "行っておこう"},
-        {"choice_id": "C", "text": "行くためだった"},
-        {"choice_id": "D", "text": "行きながらだった"}
+        {
+          "choice_id": "A",
+          "text": "行ったことがある"
+        },
+        {
+          "choice_id": "B",
+          "text": "行っておこう"
+        },
+        {
+          "choice_id": "C",
+          "text": "行くためだった"
+        },
+        {
+          "choice_id": "D",
+          "text": "行きながらだった"
+        }
       ],
       "answer": {
         "type": "choice",
@@ -38,10 +54,22 @@
       "target_title": "〜ておく",
       "prompt": "忘れないうちに、予定をカレンダーに＿＿。",
       "choices": [
-        {"choice_id": "A", "text": "入れておいた"},
-        {"choice_id": "B", "text": "入れたことがある"},
-        {"choice_id": "C", "text": "入れるところだった"},
-        {"choice_id": "D", "text": "入れながらだった"}
+        {
+          "choice_id": "A",
+          "text": "入れておいた"
+        },
+        {
+          "choice_id": "B",
+          "text": "入れたことがある"
+        },
+        {
+          "choice_id": "C",
+          "text": "入れるところだった"
+        },
+        {
+          "choice_id": "D",
+          "text": "入れながらだった"
+        }
       ],
       "answer": {
         "type": "choice",
@@ -57,18 +85,22 @@
       "target_item_uid": "R-N3-001",
       "target_title": "うち／ないうち",
       "prompt": "ネットで見つけたレシピ、＿＿メモしておいた。",
-      "use": "忘れる",
-      "intended_meaning": "before I forget",
       "answer": {
         "type": "text",
-        "accepted_answers": ["忘れないうちに"],
+        "accepted_answers": [
+          "忘れないうちに"
+        ],
         "case_sensitive": true,
         "trim_whitespace": true,
         "normalize_japanese_punctuation": true
       },
       "explanation": "忘れないうちに means before I forget / while I still remember.",
       "validity": "Valid",
-      "points": 2
+      "points": 2,
+      "helper_text": [
+        "Use the verb: 忘れる",
+        "Intended meaning: before I forget"
+      ]
     },
     {
       "question_id": "sample_uchini_review_001_q004",
@@ -76,18 +108,23 @@
       "target_item_uid": "R-N4-review",
       "target_title": "〜ておく",
       "prompt": "あとで困らないように、必要なファイルを＿＿。",
-      "use": "保存する",
-      "intended_meaning": "save it in advance",
       "answer": {
         "type": "text",
-        "accepted_answers": ["保存しておいた", "保存しておきました"],
+        "accepted_answers": [
+          "保存しておいた",
+          "保存しておきました"
+        ],
         "case_sensitive": true,
         "trim_whitespace": true,
         "normalize_japanese_punctuation": true
       },
       "explanation": "保存しておいた means saved it in advance / kept it saved for later.",
       "validity": "Valid",
-      "points": 2
+      "points": 2,
+      "helper_text": [
+        "Use the verb: 保存する",
+        "Intended meaning: save it in advance"
+      ]
     }
   ]
 }

@@ -192,3 +192,16 @@ details pre {
     padding: 1rem;
   }
 }
+
+.helper-text {
+  margin: -0.2rem 0 0.6rem;
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.93rem;
+  line-height: 1.35;
+  opacity: 0.82;
+}
+
+.helper-text p {
+  margin: 0;
+}
