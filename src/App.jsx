@@ -170,7 +170,6 @@ export default function App() {
         ) : user ? (
           <div className="dashboard">
             <p className="status">Signed in as <strong>{user.email}</strong></p>
-
             {manifestLoading ? <p className="status">Loading drills...</p> : null}
             {manifestError ? <p className="error" role="alert">{manifestError}</p> : null}
 
