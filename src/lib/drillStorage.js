@@ -39,7 +39,7 @@ export async function loadProgressMap(supabase, userId) {
 export async function loadAttemptMap(supabase, userId) {
   const { data, error } = await supabase
     .from('drill_attempts')
-    .select('drill_uid,drill_version,answers_json,results_json,summary_json,completed_at')
+    .select('drill_uid,drill_version,result_json,summary_json,completed_at')
     .eq('user_id', userId)
 
   if (error) throw error
@@ -48,13 +48,14 @@ export async function loadAttemptMap(supabase, userId) {
     (data ?? []).map((row) => [
       row.drill_uid,
       {
-        completed: true,
+        completed: row.result_json?.completed ?? true,
+        attempt_id: row.result_json?.attempt_id ?? null,
         drill_uid: row.drill_uid,
         drill_version: row.drill_version,
-        answers: row.answers_json ?? {},
-        results: row.results_json ?? [],
-        summary: row.summary_json ?? null,
-        completed_at: row.completed_at ?? null,
+        answers: row.result_json?.answers ?? {},
+        results: row.result_json?.results ?? [],
+        summary: row.result_json?.summary ?? row.summary_json ?? null,
+        completed_at: row.result_json?.completed_at ?? row.completed_at ?? null,
       },
     ])
   )
