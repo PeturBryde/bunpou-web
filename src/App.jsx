@@ -1,25 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabase'
-
-const DRILL_PROGRESS_KEY = 'bunpouWeb.drillProgress.v1'
+import {
+  deleteDrillProgress,
+  loadAttemptMap,
+  loadProgressMap,
+  readLocalProgress,
+  saveDrillProgress,
+  writeLocalProgress,
+} from './lib/drillStorage'
 
 function buildAssetUrl(path) {
   return `${import.meta.env.BASE_URL}${path}`
-}
-
-function readDrillProgress() {
-  try {
-    const raw = localStorage.getItem(DRILL_PROGRESS_KEY)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw)
-    return typeof parsed === 'object' && parsed !== null ? parsed : {}
-  } catch {
-    return {}
-  }
-}
-
-function writeDrillProgress(progressByUid) {
-  localStorage.setItem(DRILL_PROGRESS_KEY, JSON.stringify(progressByUid))
 }
 
 function isAttemptGraded(attempt) {
@@ -123,6 +114,7 @@ export default function App() {
   const [answers, setAnswers] = useState({})
   const [submitMessage, setSubmitMessage] = useState('')
   const [completedDrills, setCompletedDrills] = useState({})
+  const [progressDrills, setProgressDrills] = useState({})
   const [attemptResult, setAttemptResult] = useState(null)
 
   useEffect(() => {
@@ -166,11 +158,12 @@ export default function App() {
       return
     }
 
-    const localProgress = readDrillProgress()
+    const localProgress = readLocalProgress()
     const completed = Object.fromEntries(
       Object.entries(localProgress).filter(([, progress]) => Boolean(progress?.completed))
     )
     setCompletedDrills(completed)
+    setProgressDrills(Object.fromEntries(Object.entries(localProgress).filter(([, progress]) => Boolean(progress?.answers))))
 
     let active = true
     setManifestLoading(true)
@@ -195,6 +188,23 @@ export default function App() {
         if (!active) return
         setManifestLoading(false)
       })
+
+    Promise.allSettled([
+      loadProgressMap(supabase, user.id),
+      loadAttemptMap(supabase, user.id),
+    ]).then(([progressResult, attemptsResult]) => {
+      if (!active) return
+      if (progressResult.status === 'fulfilled') {
+        setProgressDrills(progressResult.value)
+      } else {
+        console.warn('Could not load remote drill progress.', progressResult.reason)
+      }
+      if (attemptsResult.status === 'fulfilled') {
+        setCompletedDrills(attemptsResult.value)
+      } else {
+        console.warn('Could not load remote completed attempts.', attemptsResult.reason)
+      }
+    })
 
     return () => {
       active = false
@@ -230,18 +240,24 @@ export default function App() {
       const response = await fetch(buildAssetUrl(path))
       if (!response.ok) throw new Error(`Could not load drill (${response.status}).`)
       const drillData = await response.json()
-      const progressByUid = readDrillProgress()
-      const existingProgress = progressByUid[drillData.drill_uid]
+      const localProgressByUid = readLocalProgress()
+      const remoteAttempt = completedDrills[drillData.drill_uid]
+      const remoteProgress = progressDrills[drillData.drill_uid]
+      const localProgress = localProgressByUid[drillData.drill_uid]
 
       setSelectedDrill(drillData)
-      setAnswers(existingProgress?.answers ?? {})
-      if (existingProgress?.completed) {
-        setAttemptResult(existingProgress)
-        if (isAttemptGraded(existingProgress)) {
+      if (remoteAttempt?.completed) {
+        setAnswers(remoteAttempt.answers ?? {})
+        setAttemptResult(remoteAttempt)
+        if (isAttemptGraded(remoteAttempt)) {
           setSubmitMessage('This submitted attempt is locked. Website grading shown below.')
         } else {
           setSubmitMessage('This drill was completed before grading was added, so no grading data is available.')
         }
+      } else if (remoteProgress?.answers) {
+        setAnswers(remoteProgress.answers)
+      } else {
+        setAnswers(localProgress?.answers ?? {})
       }
     } catch (openDrillError) {
       setDrillError(openDrillError.message)
@@ -252,14 +268,24 @@ export default function App() {
 
   function persistAnswers(nextAnswers) {
     if (!selectedDrill?.drill_uid) return
-    const progressByUid = readDrillProgress()
+    const progressByUid = readLocalProgress()
     const currentProgress = progressByUid[selectedDrill.drill_uid] ?? {}
-    progressByUid[selectedDrill.drill_uid] = {
+    const nextProgress = {
       ...currentProgress,
+      drill_uid: selectedDrill.drill_uid,
+      drill_version: selectedDrill.version,
       answers: nextAnswers,
       completed: Boolean(currentProgress.completed),
+      updated_at: new Date().toISOString(),
     }
-    writeDrillProgress(progressByUid)
+    progressByUid[selectedDrill.drill_uid] = nextProgress
+    writeLocalProgress(progressByUid)
+    setProgressDrills((previous) => ({ ...previous, [selectedDrill.drill_uid]: nextProgress }))
+    if (user?.id) {
+      saveDrillProgress(supabase, user.id, selectedDrill.drill_uid, selectedDrill.version, nextProgress).catch((saveError) => {
+        console.warn('Could not save remote drill progress.', saveError)
+      })
+    }
   }
 
   function handleChoiceChange(questionId, choiceId) { setAnswers((p) => { const n = { ...p, [questionId]: choiceId }; persistAnswers(n); return n }) }
@@ -270,10 +296,19 @@ export default function App() {
     setAnswers({})
     setSubmitMessage('')
     setAttemptResult(null)
-    const progressByUid = readDrillProgress()
-    const currentProgress = progressByUid[selectedDrill.drill_uid] ?? {}
-    progressByUid[selectedDrill.drill_uid] = { ...currentProgress, answers: {}, completed: false }
-    writeDrillProgress(progressByUid)
+    const progressByUid = readLocalProgress()
+    delete progressByUid[selectedDrill.drill_uid]
+    writeLocalProgress(progressByUid)
+    setProgressDrills((previous) => {
+      const next = { ...previous }
+      delete next[selectedDrill.drill_uid]
+      return next
+    })
+    if (user?.id) {
+      deleteDrillProgress(supabase, user.id, selectedDrill.drill_uid).catch((deleteError) => {
+        console.warn('Could not delete remote drill progress.', deleteError)
+      })
+    }
     setCompletedDrills((previous) => {
       const next = { ...previous }
       delete next[selectedDrill.drill_uid]
@@ -285,9 +320,9 @@ export default function App() {
     event.preventDefault()
     if (!selectedDrill?.drill_uid) return
     const gradedAttempt = gradeDrill(selectedDrill, answers)
-    const progressByUid = readDrillProgress()
+    const progressByUid = readLocalProgress()
     progressByUid[selectedDrill.drill_uid] = gradedAttempt
-    writeDrillProgress(progressByUid)
+    writeLocalProgress(progressByUid)
     setCompletedDrills((previous) => ({ ...previous, [selectedDrill.drill_uid]: gradedAttempt }))
     setAttemptResult(gradedAttempt)
     setSubmitMessage('Submitted. Website grading complete. Short-completion grading is preliminary.')
@@ -300,9 +335,9 @@ export default function App() {
 
   function clearLegacyCompletion() {
     if (!selectedDrill?.drill_uid) return
-    const progressByUid = readDrillProgress()
+    const progressByUid = readLocalProgress()
     delete progressByUid[selectedDrill.drill_uid]
-    writeDrillProgress(progressByUid)
+    writeLocalProgress(progressByUid)
     setCompletedDrills((previous) => {
       const next = { ...previous }
       delete next[selectedDrill.drill_uid]
@@ -321,8 +356,10 @@ export default function App() {
     {!manifestLoading && !manifestError && manifest && !selectedDrill ? <div className="drill-list" aria-live="polite"><h2>Available drills</h2>
       {manifest.drills?.length ? manifest.drills.map((drill) => {
         const completed = completedDrills[drill.drill_uid]
+        const inProgress = progressDrills[drill.drill_uid]
         const scoreText = completed?.summary ? `Completed: ${completed.summary.website_score}/${completed.summary.max_score}` : 'Completed'
-        return <article key={drill.drill_uid} className="drill-card"><h3>{drill.title}</h3><p>{drill.description}</p><p className="meta">Questions: {drill.question_count}</p>{completed ? <p className="status-badge" aria-label="Completed">{scoreText}</p> : null}<button type="button" onClick={() => openDrill(drill.path)} disabled={drillLoading}>{completed ? 'Review drill' : 'Open drill'}</button></article>
+        const statusText = completed ? scoreText : inProgress ? 'In progress' : 'Not started'
+        return <article key={drill.drill_uid} className="drill-card"><h3>{drill.title}</h3><p>{drill.description}</p><p className="meta">Questions: {drill.question_count}</p><p className="status-badge">{statusText}</p><button type="button" onClick={() => openDrill(drill.path)} disabled={drillLoading}>{completed ? 'Review drill' : 'Open drill'}</button></article>
       }) : <p className="status">No drills found.</p>}</div> : null}
     {drillLoading ? <p className="status">Loading drill...</p> : null}
     {drillError ? <p className="error" role="alert">{drillError}</p> : null}
