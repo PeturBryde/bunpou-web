@@ -25,3 +25,11 @@ Experimental frontend for grammar exercises with progress tracking.
 ```bash
 npm run build
 ```
+
+## Supabase schema notes
+
+This app uses Supabase Auth with Postgres tables for drill progress and attempts. The initial schema was applied manually in the Supabase SQL editor, and the rerunnable reference SQL now lives in `supabase/schema.sql`.
+
+For future database changes, update `supabase/schema.sql` so the checked-in schema stays in sync with what is applied remotely.
+
+Never expose Supabase service-role or other secret keys in frontend code or browser-delivered environment variables.
