@@ -7,6 +7,8 @@ In-progress drill answers are persisted to Supabase `public.drill_progress` for 
 Completed attempts are now saved to Supabase `public.drill_attempts`. Retakes are intentionally blocked by the database unique constraint on `(user_id, drill_uid)`, and the existing completed attempt is shown as read-only. Completed attempts can also be exported to ChatGPT for external tracking, and import confirmation is tracked per attempt via `import_confirmed_at`.
 Newly submitted attempt results now store a per-question metadata snapshot in `result_json.results` so exported rows are self-contained for tracker import (including prompt/target metadata, answer metadata, explanation, validity, and points).
 
+Exercise/question JSON and exported per-question result snapshots use `target_uid` as the grammar target identifier. The deprecated `target_item_uid` field is rejected during upload validation.
+
 ## Local development
 
 1. Install dependencies:

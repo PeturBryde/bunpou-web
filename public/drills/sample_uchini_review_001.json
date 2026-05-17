@@ -18,7 +18,7 @@
     {
       "question_id": "sample_uchini_review_001_q001",
       "type": "multiple_choice",
-      "target_item_uid": "R-N3-001",
+      "target_uid": "R-N3-001",
       "target_title": "うち／ないうち",
       "prompt": "暗くならないうちに、犬の散歩に＿＿。",
       "choices": [
@@ -50,7 +50,7 @@
     {
       "question_id": "sample_uchini_review_001_q002",
       "type": "multiple_choice",
-      "target_item_uid": "R-N4-review",
+      "target_uid": "R-N4-review",
       "target_title": "〜ておく",
       "prompt": "忘れないうちに、予定をカレンダーに＿＿。",
       "choices": [
@@ -82,7 +82,7 @@
     {
       "question_id": "sample_uchini_review_001_q003",
       "type": "short_completion",
-      "target_item_uid": "R-N3-001",
+      "target_uid": "R-N3-001",
       "target_title": "うち／ないうち",
       "prompt": "ネットで見つけたレシピ、＿＿メモしておいた。",
       "answer": {
@@ -105,7 +105,7 @@
     {
       "question_id": "sample_uchini_review_001_q004",
       "type": "short_completion",
-      "target_item_uid": "R-N4-review",
+      "target_uid": "R-N4-review",
       "target_title": "〜ておく",
       "prompt": "あとで困らないように、必要なファイルを＿＿。",
       "answer": {
