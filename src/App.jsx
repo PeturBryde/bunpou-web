@@ -8,6 +8,9 @@ import {
   saveDrillAttempt,
   saveDrillProgress,
   writeLocalProgress,
+  loadUnimportedAttempts,
+  markAttemptsExported,
+  markExportBatchImported,
 } from './lib/drillStorage'
 
 function buildAssetUrl(path) {
@@ -96,6 +99,34 @@ function gradeDrill(drill, answers) {
   }
 }
 
+
+
+function getLatestExportBatchInfo(attempts) {
+  const exportedAttempts = attempts.filter((attempt) => attempt.last_export_batch_id && attempt.last_exported_at)
+  if (!exportedAttempts.length) return null
+
+  return exportedAttempts.reduce((latest, attempt) => {
+    if (!latest) return attempt
+    return new Date(attempt.last_exported_at) > new Date(latest.last_exported_at) ? attempt : latest
+  }, null)
+}
+
+function sanitizeTimestampForId(isoTimestamp) {
+  return isoTimestamp.replaceAll(':', '-').replaceAll('.', '-')
+}
+
+function downloadJsonFile(filename, payload) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.append(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
 export default function App() {
   const EXERCISE_HASH_KEY = 'exercise'
   const [email, setEmail] = useState('')
@@ -119,6 +150,12 @@ export default function App() {
   const [progressDrills, setProgressDrills] = useState({})
   const [attemptResult, setAttemptResult] = useState(null)
   const [hashWarning, setHashWarning] = useState('')
+  const [unimportedAttempts, setUnimportedAttempts] = useState([])
+  const [exportPanelLoading, setExportPanelLoading] = useState(false)
+  const [exportWorking, setExportWorking] = useState(false)
+  const [markImportedWorking, setMarkImportedWorking] = useState(false)
+  const [exportMessage, setExportMessage] = useState('')
+  const [exportError, setExportError] = useState('')
 
   useEffect(() => {
     let mounted = true
@@ -158,6 +195,9 @@ export default function App() {
       setSubmitMessage('')
       setCompletedDrills({})
       setAttemptResult(null)
+      setUnimportedAttempts([])
+      setExportMessage('')
+      setExportError('')
       return
     }
 
@@ -213,6 +253,102 @@ export default function App() {
       active = false
     }
   }, [user])
+
+  async function refreshUnimportedAttempts() {
+    if (!user?.id) return
+
+    try {
+      setExportPanelLoading(true)
+      const attempts = await loadUnimportedAttempts(supabase, user.id)
+      setUnimportedAttempts(attempts)
+    } catch (loadError) {
+      setExportError(`Could not load exercise export status: ${loadError.message}`)
+    } finally {
+      setExportPanelLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!user?.id) return
+    refreshUnimportedAttempts()
+  }, [user?.id])
+
+  async function handleExportResults() {
+    if (!user?.id || !unimportedAttempts.length || exportWorking) return
+
+    setExportWorking(true)
+    setExportError('')
+    setExportMessage('')
+
+    try {
+      const exportedAt = new Date().toISOString()
+      const sanitizedTimestamp = sanitizeTimestampForId(exportedAt)
+      const exportBatchId = `export_${sanitizedTimestamp}`
+      const filename = `bunpou_results_export_${sanitizedTimestamp}.json`
+      const payload = {
+        schema_version: 'bunpou_results_export_v1',
+        export_batch_id: exportBatchId,
+        exported_at: exportedAt,
+        source: {
+          app: 'bunpou-web',
+          app_version: '0.1.0',
+          repo: 'PeturBryde/bunpou-web',
+        },
+        user: {
+          user_id: user.id,
+          email: user.email ?? '',
+        },
+        attempt_count: unimportedAttempts.length,
+        attempts: unimportedAttempts.map((attempt) => ({
+          attempt_id: attempt.attempt_id,
+          drill_uid: attempt.drill_uid,
+          drill_version: attempt.drill_version,
+          completed_at: attempt.completed_at,
+          result_json: attempt.result_json,
+          summary_json: attempt.summary_json,
+        })),
+      }
+
+      downloadJsonFile(filename, payload)
+      await markAttemptsExported(
+        supabase,
+        user.id,
+        unimportedAttempts.map((attempt) => attempt.attempt_id),
+        exportBatchId,
+        exportedAt
+      )
+
+      setExportMessage(`Downloaded ${filename}. Upload it to ChatGPT, then mark the latest export as imported after confirmation.`)
+      await refreshUnimportedAttempts()
+    } catch (exportErr) {
+      setExportError(`Export failed: ${exportErr.message}`)
+    } finally {
+      setExportWorking(false)
+    }
+  }
+
+  async function handleMarkLatestImported() {
+    if (!user?.id || markImportedWorking) return
+    const latestExport = getLatestExportBatchInfo(unimportedAttempts)
+    if (!latestExport?.last_export_batch_id) return
+
+    const confirmed = window.confirm('Only do this after ChatGPT successfully imported this export file. Mark this batch as imported?')
+    if (!confirmed) return
+
+    setMarkImportedWorking(true)
+    setExportError('')
+    setExportMessage('')
+
+    try {
+      await markExportBatchImported(supabase, user.id, latestExport.last_export_batch_id, new Date().toISOString())
+      setExportMessage(`Marked export batch ${latestExport.last_export_batch_id} as imported.`)
+      await refreshUnimportedAttempts()
+    } catch (markError) {
+      setExportError(`Could not mark latest export as imported: ${markError.message}`)
+    } finally {
+      setMarkImportedWorking(false)
+    }
+  }
 
   async function handleSubmit(event) { /* unchanged */
     event.preventDefault()
@@ -428,6 +564,9 @@ export default function App() {
   const isSelectedDrillCompleted = isAttemptGraded(selectedDrillProgress)
   const isLegacyCompletedWithoutGrading = Boolean(selectedDrillProgress?.completed && !isSelectedDrillCompleted)
 
+  const latestExportBatch = getLatestExportBatchInfo(unimportedAttempts)
+  const unimportedCount = unimportedAttempts.length
+
   function clearLegacyCompletion() {
     if (!selectedDrill?.drill_uid) return
     const progressByUid = readLocalProgress()
@@ -446,6 +585,15 @@ export default function App() {
   return <main className="page"><section className="card" aria-busy={loading || submitting}><h1>Bunpou Web</h1><p className="subtitle">Japanese grammar exercises</p>
   {loading ? <p className="status">Loading session...</p> : user ? <div className="dashboard">
     <p className="status">Signed in as <strong>{user.email}</strong></p>
+    <section className="export-panel" aria-live="polite"><h2>Exercise results export</h2>
+      {exportPanelLoading ? <p className="status">Loading export status...</p> : null}
+      {!exportPanelLoading && !unimportedCount ? <p className="status">No completed exercise results waiting to export.</p> : null}
+      {!exportPanelLoading && unimportedCount ? <p className="status">{unimportedCount} completed exercise {unimportedCount === 1 ? 'result' : 'results'} waiting to import.</p> : null}
+      {latestExportBatch?.last_export_batch_id ? <div className="status"><p>Latest export batch: <strong>{latestExportBatch.last_export_batch_id}</strong></p><p>Exported at: {new Date(latestExportBatch.last_exported_at).toLocaleString()}</p><p>These results were exported and are still waiting to be marked as imported.</p></div> : null}
+      <div className="button-row"><button type="button" onClick={handleExportResults} disabled={exportPanelLoading || exportWorking || !unimportedCount}>{exportWorking ? 'Exporting…' : 'Export results for ChatGPT'}</button>{latestExportBatch?.last_export_batch_id ? <button type="button" onClick={handleMarkLatestImported} disabled={markImportedWorking || exportPanelLoading}>{markImportedWorking ? 'Marking…' : 'Mark latest export as imported'}</button> : null}</div>
+      {exportMessage ? <p className="status success">{exportMessage}</p> : null}
+      {exportError ? <p className="error" role="alert">{exportError}</p> : null}
+    </section>
     {manifestLoading ? <p className="status">Loading exercises...</p> : null}
     {manifestError ? <p className="error" role="alert">{manifestError}</p> : null}
     {hashWarning ? <p className="status">{hashWarning}</p> : null}
