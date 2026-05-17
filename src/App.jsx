@@ -39,16 +39,42 @@ function normalizeText(value, normalizeJapanesePunctuation) {
   return normalized
 }
 
+function buildQuestionSnapshot(question) {
+  const snapshot = {
+    question_id: question.question_id,
+    question_type: question.type,
+    target_item_uid: question.target_item_uid ?? null,
+    target_title: question.target_title ?? null,
+    prompt: question.prompt ?? '',
+    explanation: question.explanation ?? '',
+    validity: question.validity ?? null,
+    points: question.points ?? 2,
+    answer: question.answer ?? null,
+  }
+
+  if (typeof question.helper_text === 'string' && question.helper_text.length > 0) {
+    snapshot.helper_text = question.helper_text
+  }
+
+  if (question.type === 'multiple_choice' && Array.isArray(question.choices)) {
+    snapshot.choices = question.choices
+  }
+
+  return snapshot
+}
+
 function gradeDrill(drill, answers) {
   const maxScore = (drill.questions ?? []).reduce((total, question) => total + (question.points ?? 2), 0)
   const perQuestion = (drill.questions ?? []).map((question) => {
     const points = question.points ?? 2
     const rawAnswer = answers[question.question_id]
+    const snapshot = buildQuestionSnapshot(question)
 
     if (question.type === 'multiple_choice') {
       const correctChoiceId = question.answer?.correct_choice_id
       const isCorrect = rawAnswer === correctChoiceId
       return {
+        ...snapshot,
         question_id: question.question_id,
         type: question.type,
         user_answer: rawAnswer ?? null,
@@ -67,6 +93,7 @@ function gradeDrill(drill, answers) {
     const isCorrect = normalizedAccepted.includes(normalizedUserAnswer)
 
     return {
+      ...snapshot,
       question_id: question.question_id,
       type: question.type,
       user_answer: rawAnswer ?? '',

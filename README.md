@@ -5,6 +5,7 @@ Experimental frontend for grammar exercises with progress tracking.
 In-progress drill answers are persisted to Supabase `public.drill_progress` for signed-in users, with `localStorage` kept as a fallback/cache during development.
 
 Completed attempts are now saved to Supabase `public.drill_attempts`. Retakes are intentionally blocked by the database unique constraint on `(user_id, drill_uid)`, and the existing completed attempt is shown as read-only. Completed attempts can also be exported to ChatGPT for external tracking, and import confirmation is tracked per attempt via `import_confirmed_at`.
+Newly submitted attempt results now store a per-question metadata snapshot in `result_json.results` so exported rows are self-contained for tracker import (including prompt/target metadata, answer metadata, explanation, validity, and points).
 
 ## Local development
 
@@ -50,4 +51,4 @@ Never expose Supabase service-role or other secret keys in frontend code or brow
 4. After ChatGPT confirms a successful import, click **Mark latest export as imported**.
 
 Important: **Exported does not mean imported**. Export only sets `last_export_batch_id` and `last_exported_at`; `import_confirmed_at` is set only after you manually confirm the latest batch import.
-
+Typed-answer grading remains preliminary on the website and can still be revised by ChatGPT during import.
