@@ -92,7 +92,7 @@ export async function saveDrillAttempt(supabase, userId, attempt) {
     drill_version: attempt.drill_version,
     completed_at: attempt.completed_at,
     result_json: attempt,
-    summary_json: attempt.summary ?? null,
+    summary_json: attempt.summary ?? {},
   }
 
   const { data, error } = await supabase
@@ -102,9 +102,9 @@ export async function saveDrillAttempt(supabase, userId, attempt) {
     .single()
 
   if (error) throw error
+
   return normalizeAttemptRow(data)
 }
-
 
 export async function loadUnimportedAttempts(supabase, userId) {
   const { data, error } = await supabase
@@ -117,6 +117,7 @@ export async function loadUnimportedAttempts(supabase, userId) {
     .order('completed_at', { ascending: true })
 
   if (error) throw error
+
   return data ?? []
 }
 
