@@ -46,7 +46,7 @@ function buildQuestionSnapshot(question) {
   const snapshot = {
     question_id: question.question_id,
     question_type: question.type,
-    target_item_uid: question.target_item_uid ?? null,
+    target_uid: question.target_uid ?? null,
     target_title: question.target_title ?? null,
     prompt: question.prompt ?? '',
     explanation: question.explanation ?? '',
@@ -183,7 +183,8 @@ function validateExerciseJson(rawInput) {
     if (!(typeof question.question_id === 'string' && question.question_id) && !(typeof question.id === 'string' && question.id)) return { ok: false, parsed: null, message: `${label} needs question_id or id.` }
     if (typeof question.type !== 'string' || !question.type) return { ok: false, parsed: null, message: `${label} is missing type.` }
     if (typeof question.prompt !== 'string' || !question.prompt.trim()) return { ok: false, parsed: null, message: `${label} is missing prompt.` }
-    if (!question.target_uid && !question.target_item_uid) return { ok: false, parsed: null, message: `${label} must include target_uid or target_item_uid.` }
+    if ('target_item_uid' in question) return { ok: false, parsed: null, message: `${label} uses deprecated field target_item_uid. Use target_uid instead.` }
+    if (typeof question.target_uid !== 'string' || !question.target_uid.trim()) return { ok: false, parsed: null, message: `${label} must include a non-empty target_uid string.` }
 
     if (question.type === 'multiple_choice') {
       if (!Array.isArray(question.choices) || question.choices.length === 0) return { ok: false, parsed: null, message: `${label} multiple_choice must include a non-empty choices array.` }
