@@ -92,7 +92,7 @@ export async function saveDrillAttempt(supabase, userId, attempt) {
     drill_version: attempt.drill_version,
     completed_at: attempt.completed_at,
     result_json: attempt,
-    summary_json: attempt.summary ?? null,
+    summary_json: attempt.summary ?? {},
   }
 
   const { data, error } = await supabase
@@ -102,5 +102,47 @@ export async function saveDrillAttempt(supabase, userId, attempt) {
     .single()
 
   if (error) throw error
+
   return normalizeAttemptRow(data)
+}
+
+export async function loadUnimportedAttempts(supabase, userId) {
+  const { data, error } = await supabase
+    .from('drill_attempts')
+    .select(
+      'attempt_id,drill_uid,drill_version,completed_at,result_json,summary_json,last_export_batch_id,last_exported_at,import_confirmed_at'
+    )
+    .eq('user_id', userId)
+    .is('import_confirmed_at', null)
+    .order('completed_at', { ascending: true })
+
+  if (error) throw error
+
+  return data ?? []
+}
+
+export async function markAttemptsExported(supabase, userId, attemptIds, exportBatchId, exportedAt) {
+  if (!attemptIds?.length) return
+
+  const { error } = await supabase
+    .from('drill_attempts')
+    .update({
+      last_export_batch_id: exportBatchId,
+      last_exported_at: exportedAt,
+    })
+    .eq('user_id', userId)
+    .in('attempt_id', attemptIds)
+
+  if (error) throw error
+}
+
+export async function markExportBatchImported(supabase, userId, exportBatchId, importedAt) {
+  const { error } = await supabase
+    .from('drill_attempts')
+    .update({ import_confirmed_at: importedAt })
+    .eq('user_id', userId)
+    .eq('last_export_batch_id', exportBatchId)
+    .is('import_confirmed_at', null)
+
+  if (error) throw error
 }
