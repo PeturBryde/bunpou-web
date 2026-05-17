@@ -40,3 +40,14 @@ Re-run the SQL in `supabase/schema.sql` in the Supabase SQL editor whenever sche
 For future database changes, update `supabase/schema.sql` so the checked-in schema stays in sync with what is applied remotely.
 
 Never expose Supabase service-role or other secret keys in frontend code or browser-delivered environment variables.
+
+
+## Export workflow for ChatGPT tracking
+
+1. Complete exercises on the website.
+2. In the dashboard, click **Export results for ChatGPT** to download a JSON export file.
+3. Upload that JSON file to ChatGPT for tracker import.
+4. After ChatGPT confirms a successful import, click **Mark latest export as imported**.
+
+Important: **Exported does not mean imported**. Export only sets `last_export_batch_id` and `last_exported_at`; `import_confirmed_at` is set only after you manually confirm the latest batch import.
+
