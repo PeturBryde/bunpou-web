@@ -219,6 +219,8 @@ export default function App() {
   const [managementMessage, setManagementMessage] = useState('')
   const [exerciseJsonText, setExerciseJsonText] = useState('')
   const [validatedExercise, setValidatedExercise] = useState(null)
+  const [isDropZoneActive, setIsDropZoneActive] = useState(false)
+  const [lastUploadedFileName, setLastUploadedFileName] = useState('')
 
   const [selectedDrill, setSelectedDrill] = useState(null)
   const [drillLoading, setDrillLoading] = useState(false)
@@ -682,8 +684,8 @@ export default function App() {
     setSubmitMessage('')
   }
 
-  function handleValidateExercise() {
-    const result = validateExerciseJson(exerciseJsonText)
+  function parseAndValidateExerciseJsonText(jsonText) {
+    const result = validateExerciseJson(jsonText)
     if (result.ok) {
       setValidatedExercise(result.parsed)
       setManagementMessage(result.message)
@@ -693,26 +695,66 @@ export default function App() {
       setManagementMessage('')
       setManagementError(result.message)
     }
+    return result
   }
 
-  async function handleSaveExercise(nextStatus) {
-    if (!user?.id) return
-    const result = validateExerciseJson(exerciseJsonText)
-    if (!result.ok) {
+  async function parseAndValidateExerciseFile(file) {
+    if (!file) return
+    try {
+      const jsonText = await file.text()
+      setExerciseJsonText(jsonText)
+      setLastUploadedFileName(file.name)
+      parseAndValidateExerciseJsonText(jsonText)
+    } catch (readError) {
       setValidatedExercise(null)
-      setManagementError(result.message)
-      return
+      setManagementMessage('')
+      setManagementError(`Could not read file: ${readError.message}`)
     }
+  }
+
+  function handleValidateExercise() {
+    parseAndValidateExerciseJsonText(exerciseJsonText)
+  }
+
+  function handleDropZoneDragOver(event) {
+    event.preventDefault()
+    setIsDropZoneActive(true)
+  }
+
+  function handleDropZoneDragLeave(event) {
+    event.preventDefault()
+    setIsDropZoneActive(false)
+  }
+
+  async function handleDropZoneDrop(event) {
+    event.preventDefault()
+    setIsDropZoneActive(false)
+    const file = event.dataTransfer?.files?.[0]
+    if (!file) return
+    await parseAndValidateExerciseFile(file)
+  }
+
+  async function handleExerciseFileChange(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    await parseAndValidateExerciseFile(file)
+    event.target.value = ''
+  }
+
+  async function handleUploadAndPublishExercise() {
+    if (!user?.id) return
+    const result = parseAndValidateExerciseJsonText(exerciseJsonText)
+    if (!result.ok) return
 
     try {
       setManagementLoading(true)
       setManagementError('')
-      const saved = await saveExercise(supabase, user.id, result.parsed, nextStatus)
-      setManagementMessage(`Saved ${saved.exercise_uid} as ${saved.status}.`)
+      const saved = await saveExercise(supabase, user.id, result.parsed, 'published')
+      setManagementMessage(`Uploaded and published ${saved.exercise_uid}.`)
       setValidatedExercise(result.parsed)
       await refreshExerciseLists()
     } catch (saveError) {
-      setManagementError(`Could not save exercise: ${saveError.message}`)
+      setManagementError(`Could not upload exercise: ${saveError.message}`)
     } finally {
       setManagementLoading(false)
     }
@@ -788,6 +830,6 @@ export default function App() {
       <div className="button-row"><button type="button" onClick={clearExerciseHash}>Back to exercise list</button><button type="button" onClick={clearAnswers} disabled={isSelectedDrillCompleted || submitting}>Clear answers</button><button type="submit" disabled={isSelectedDrillCompleted || submitting}>{submitting ? 'Submitting…' : 'Submit'}</button></div>
       {submitMessage ? <p className="status success">{submitMessage}</p> : null}
     </form> : null}
-    <section className="management-panel" aria-live="polite"><h2>Exercise management (debug/admin)</h2><p className="status">Manage drafts, publish, and archive Supabase-backed exercises.</p><textarea value={exerciseJsonText} onChange={(event) => setExerciseJsonText(event.target.value)} placeholder="Paste exercise JSON here" rows={10} /><div className="button-row"><button type="button" onClick={handleValidateExercise} disabled={managementLoading}>Validate</button><button type="button" onClick={() => handleSaveExercise('draft')} disabled={managementLoading}>Save draft</button><button type="button" onClick={() => handleSaveExercise('published')} disabled={managementLoading}>Save and publish</button></div>{validatedExercise ? <p className="status">Ready to save: <strong>{validatedExercise.title ?? validatedExercise.exercise_uid}</strong> ({validatedExercise.exercise_uid})</p> : null}{managementMessage ? <p className="status success">{managementMessage}</p> : null}{managementError ? <p className="error" role="alert">{managementError}</p> : null}{managementLoading ? <p className="status">Updating exercise list...</p> : null}<div className="management-list"><h3>Existing exercises</h3>{allExercises.length ? allExercises.map((exercise) => { const count = Array.isArray(exercise.exercise_json?.questions) ? exercise.exercise_json.questions.length : 0; return <article key={exercise.exercise_uid} className="drill-card"><p><strong>{exercise.title ?? exercise.exercise_uid}</strong></p><p className="meta">UID: {exercise.exercise_uid}</p><p className="meta">Level: {exercise.level ?? '—'} • Status: {exercise.status} • Version: {exercise.exercise_version}</p><p className="meta">Updated: {new Date(exercise.updated_at).toLocaleString()} • Questions: {count}</p><div className="button-row">{exercise.status !== 'published' ? <button type="button" onClick={() => handlePublishExisting(exercise.exercise_uid)} disabled={managementLoading}>Publish</button> : null}{exercise.status !== 'archived' ? <button type="button" onClick={() => handleArchiveExisting(exercise.exercise_uid)} disabled={managementLoading}>Archive</button> : null}</div></article> }) : <p className="status">No exercises found in Supabase yet.</p>}</div></section><button type="button" onClick={handleLogout} disabled={submitting}>{submitting ? 'Logging out...' : 'Logout'}</button></div> : <form className="form" onSubmit={handleSubmit}><label htmlFor="email">Email</label><input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /><label htmlFor="password">Password</label><input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /><button type="submit" disabled={submitting}>{submitting ? 'Logging in...' : 'Login'}</button></form>}
+    <section className="management-panel" aria-live="polite"><h2>Upload exercises</h2><p className="status">Upload JSON exercises to publish them, then manage published/archive status below.</p><div className={`drop-zone ${isDropZoneActive ? 'drop-zone-active' : ''}`} onDragOver={handleDropZoneDragOver} onDragLeave={handleDropZoneDragLeave} onDrop={handleDropZoneDrop}><p>Drag a JSON exercise file here, or choose a file.</p><label className="file-picker-label">Choose JSON file<input type="file" accept=".json,application/json" onChange={handleExerciseFileChange} /></label>{lastUploadedFileName ? <p className="meta">Loaded file: {lastUploadedFileName}</p> : null}</div><textarea value={exerciseJsonText} onChange={(event) => setExerciseJsonText(event.target.value)} placeholder="Paste exercise JSON here (fallback)" rows={10} /><div className="button-row"><button type="button" onClick={handleValidateExercise} disabled={managementLoading}>Validate</button><button type="button" onClick={handleUploadAndPublishExercise} disabled={managementLoading}>Upload and publish</button></div>{validatedExercise ? <div className="status"><p>Ready to upload:</p><p><strong>{validatedExercise.title ?? validatedExercise.exercise_uid}</strong></p><p className="meta">UID: {validatedExercise.exercise_uid} • Level: {validatedExercise.level ?? '—'} • Version: {validatedExercise.version ?? 1} • Questions: {Array.isArray(validatedExercise.questions) ? validatedExercise.questions.length : 0}</p></div> : null}{managementMessage ? <p className="status success">{managementMessage}</p> : null}{managementError ? <p className="error" role="alert">{managementError}</p> : null}{managementLoading ? <p className="status">Updating exercise list...</p> : null}<div className="management-list"><h3>Existing exercises</h3>{allExercises.length ? allExercises.map((exercise) => { const count = Array.isArray(exercise.exercise_json?.questions) ? exercise.exercise_json.questions.length : 0; return <article key={exercise.exercise_uid} className="drill-card"><p><strong>{exercise.title ?? exercise.exercise_uid}</strong></p><p className="meta">UID: {exercise.exercise_uid}</p><p className="meta">Level: {exercise.level ?? '—'} • Status: {exercise.status} • Version: {exercise.exercise_version}</p><p className="meta">Updated: {new Date(exercise.updated_at).toLocaleString()} • Questions: {count}</p><div className="button-row">{exercise.status !== 'published' ? <button type="button" onClick={() => handlePublishExisting(exercise.exercise_uid)} disabled={managementLoading}>Publish</button> : null}{exercise.status !== 'archived' ? <button type="button" onClick={() => handleArchiveExisting(exercise.exercise_uid)} disabled={managementLoading}>Archive</button> : null}</div></article> }) : <p className="status">No exercises found in Supabase yet.</p>}</div></section><button type="button" onClick={handleLogout} disabled={submitting}>{submitting ? 'Logging out...' : 'Logout'}</button></div> : <form className="form" onSubmit={handleSubmit}><label htmlFor="email">Email</label><input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /><label htmlFor="password">Password</label><input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /><button type="submit" disabled={submitting}>{submitting ? 'Logging in...' : 'Login'}</button></form>}
   {error ? <p className="error" role="alert">{error}</p> : null}</section></main>
 }

@@ -286,3 +286,43 @@ details pre {
   display: grid;
   gap: 0.65rem;
 }
+
+.management-panel {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.drop-zone {
+  border: 2px dashed rgba(255, 255, 255, 0.45);
+  border-radius: 10px;
+  padding: 1rem;
+  display: grid;
+  gap: 0.65rem;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.drop-zone p {
+  margin: 0;
+}
+
+.drop-zone-active {
+  border-color: #9aa0ff;
+  background: rgba(100, 108, 255, 0.2);
+}
+
+.file-picker-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  padding: 0.65rem 0.8rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+}
+
+.file-picker-label input[type='file'] {
+  display: none;
+}
