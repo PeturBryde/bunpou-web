@@ -184,6 +184,7 @@ function validateExerciseJson(rawInput) {
     if (typeof question.type !== 'string' || !question.type) return { ok: false, parsed: null, message: `${label} is missing type.` }
     if (typeof question.prompt !== 'string' || !question.prompt.trim()) return { ok: false, parsed: null, message: `${label} is missing prompt.` }
     if ('target_item_uid' in question) return { ok: false, parsed: null, message: `${label} uses deprecated field target_item_uid. Use target_uid instead.` }
+    if (!('target_uid' in question)) return { ok: false, parsed: null, message: `${label} is missing required field target_uid.` }
     if (typeof question.target_uid !== 'string' || !question.target_uid.trim()) return { ok: false, parsed: null, message: `${label} must include a non-empty target_uid string.` }
 
     if (question.type === 'multiple_choice') {
