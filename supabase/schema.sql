@@ -85,3 +85,8 @@ create policy "Users can delete own drill_attempts"
   for delete
   to authenticated
   using (auth.uid() = user_id);
+
+
+alter table public.drill_attempts
+  add column if not exists last_export_batch_id text,
+  add column if not exists last_exported_at timestamptz;
