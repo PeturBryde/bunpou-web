@@ -279,6 +279,7 @@ export default function App() {
       setDrillError('')
       setAnswers({})
       setSubmitMessage('')
+      setProgressDrills({})
       setCompletedDrills({})
       setAttemptResult(null)
       setUnimportedAttempts([])
@@ -338,6 +339,7 @@ export default function App() {
       const mappedExercises = publishedResult.value.map((row) => {
         const exerciseJson = typeof row.exercise_json === 'object' && row.exercise_json !== null ? row.exercise_json : {}
         const drillUid = row.exercise_uid ?? exerciseJson.exercise_uid
+        // Compatibility mapping: exercises.exercise_uid is used as runtime drill_uid because progress/attempt tables still key by drill_uid.
         const version = exerciseJson.version ?? row.exercise_version ?? 1
         const title = row.title ?? exerciseJson.title ?? drillUid ?? 'Untitled exercise'
         const description = row.description ?? exerciseJson.description ?? ''
@@ -456,7 +458,7 @@ export default function App() {
     }
   }
 
-  async function handleSubmit(event) { /* unchanged */
+  async function handleSubmit(event) {
     event.preventDefault()
     setError('')
     setSubmitting(true)
