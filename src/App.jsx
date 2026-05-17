@@ -12,10 +12,7 @@ import {
   markAttemptsExported,
   markExportBatchImported,
 } from './lib/drillStorage'
-
-function buildAssetUrl(path) {
-  return `${import.meta.env.BASE_URL}${path}`
-}
+import { loadPublishedExercises } from './lib/exerciseStorage'
 
 function isAttemptGraded(attempt) {
   return Boolean(attempt?.completed && attempt?.summary && Array.isArray(attempt?.results))
@@ -163,9 +160,9 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
-  const [manifest, setManifest] = useState(null)
-  const [manifestLoading, setManifestLoading] = useState(false)
-  const [manifestError, setManifestError] = useState('')
+  const [publishedExercises, setPublishedExercises] = useState([])
+  const [exercisesLoading, setExercisesLoading] = useState(false)
+  const [exercisesError, setExercisesError] = useState('')
 
   const [selectedDrill, setSelectedDrill] = useState(null)
   const [drillLoading, setDrillLoading] = useState(false)
@@ -214,8 +211,8 @@ export default function App() {
 
   useEffect(() => {
     if (!user) {
-      setManifest(null)
-      setManifestError('')
+      setPublishedExercises([])
+      setExercisesError('')
       setSelectedDrill(null)
       setDrillError('')
       setAnswers({})
@@ -236,27 +233,46 @@ export default function App() {
     setProgressDrills(Object.fromEntries(Object.entries(localProgress).filter(([, progress]) => Boolean(progress?.answers))))
 
     let active = true
-    setManifestLoading(true)
-    setManifestError('')
+    setExercisesLoading(true)
+    setExercisesError('')
 
-    fetch(buildAssetUrl('drills/manifest.json'))
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Could not load exercise manifest (${response.status}).`)
-        }
-        return response.json()
-      })
-      .then((manifestData) => {
+    loadPublishedExercises(supabase, user.id)
+      .then((exerciseRows) => {
         if (!active) return
-        setManifest(manifestData)
+        const mappedExercises = exerciseRows.map((row) => {
+          const exerciseJson = typeof row.exercise_json === 'object' && row.exercise_json !== null ? row.exercise_json : {}
+          const drillUid = row.exercise_uid ?? exerciseJson.exercise_uid
+          const version = exerciseJson.version ?? row.exercise_version ?? 1
+          const title = row.title ?? exerciseJson.title ?? drillUid ?? 'Untitled exercise'
+          const description = row.description ?? exerciseJson.description ?? ''
+          const level = row.level ?? exerciseJson.level ?? null
+          const questions = Array.isArray(exerciseJson.questions) ? exerciseJson.questions : []
+
+          return {
+            ...exerciseJson,
+            drill_uid: drillUid,
+            version,
+            title,
+            description,
+            level,
+            questions,
+            question_count: questions.length,
+            exercise_uid: row.exercise_uid,
+            exercise_version: row.exercise_version,
+            status: row.status,
+            updated_at: row.updated_at,
+          }
+        })
+        setPublishedExercises(mappedExercises)
       })
-      .catch((manifestFetchError) => {
+      .catch((publishedLoadError) => {
         if (!active) return
-        setManifestError(manifestFetchError.message)
+        setExercisesError(`Could not load published exercises: ${publishedLoadError.message}`)
+        setPublishedExercises([])
       })
       .finally(() => {
         if (!active) return
-        setManifestLoading(false)
+        setExercisesLoading(false)
       })
 
     Promise.allSettled([
@@ -395,7 +411,7 @@ export default function App() {
     setSubmitting(false)
   }
 
-  async function openDrill(path) {
+  async function openDrill(drillData) {
     setDrillLoading(true)
     setDrillError('')
     setSubmitMessage('')
@@ -403,9 +419,6 @@ export default function App() {
     setAttemptResult(null)
 
     try {
-      const response = await fetch(buildAssetUrl(path))
-      if (!response.ok) throw new Error(`Could not load exercise (${response.status}).`)
-      const drillData = await response.json()
       const localProgressByUid = readLocalProgress()
       const remoteAttempt = completedDrills[drillData.drill_uid]
       const remoteProgress = progressDrills[drillData.drill_uid]
@@ -445,12 +458,12 @@ export default function App() {
     }
   }
 
-  function findManifestEntryByUid(drillUid) {
-    return manifest?.drills?.find((item) => item.drill_uid === drillUid) ?? null
+  function findExerciseByUid(drillUid) {
+    return publishedExercises.find((item) => item.drill_uid === drillUid) ?? null
   }
 
   useEffect(() => {
-    if (!user || !manifest?.drills?.length) return
+    if (!user || !publishedExercises.length) return
 
     function openFromHash() {
       const hashValue = window.location.hash.replace(/^#/, '')
@@ -464,7 +477,7 @@ export default function App() {
       const hashDrillUid = params.get(EXERCISE_HASH_KEY)
       if (!hashDrillUid) return
 
-      const drillEntry = findManifestEntryByUid(hashDrillUid)
+      const drillEntry = findExerciseByUid(hashDrillUid)
       if (!drillEntry) {
         setSelectedDrill(null)
         setHashWarning(`Exercise "${hashDrillUid}" was not found.`)
@@ -473,14 +486,14 @@ export default function App() {
 
       setHashWarning('')
       if (selectedDrill?.drill_uid !== hashDrillUid) {
-        openDrill(drillEntry.path)
+        openDrill(drillEntry)
       }
     }
 
     openFromHash()
     window.addEventListener('hashchange', openFromHash)
     return () => window.removeEventListener('hashchange', openFromHash)
-  }, [user, manifest, selectedDrill?.drill_uid])
+  }, [user, publishedExercises, selectedDrill?.drill_uid])
 
   function persistAnswers(nextAnswers) {
     if (!selectedDrill?.drill_uid) return
@@ -621,17 +634,17 @@ export default function App() {
       {exportMessage ? <p className="status success">{exportMessage}</p> : null}
       {exportError ? <p className="error" role="alert">{exportError}</p> : null}
     </section>
-    {manifestLoading ? <p className="status">Loading exercises...</p> : null}
-    {manifestError ? <p className="error" role="alert">{manifestError}</p> : null}
+    {exercisesLoading ? <p className="status">Loading published exercises...</p> : null}
+    {exercisesError ? <p className="error" role="alert">{exercisesError}</p> : null}
     {hashWarning ? <p className="status">{hashWarning}</p> : null}
-    {!manifestLoading && !manifestError && manifest && !selectedDrill ? <div className="drill-list" aria-live="polite"><h2>Available exercises</h2>
-      {manifest.drills?.length ? manifest.drills.map((drill) => {
+    {!exercisesLoading && !selectedDrill ? <div className="drill-list" aria-live="polite"><h2>Available exercises</h2>
+      {publishedExercises.length ? publishedExercises.map((drill) => {
         const completed = completedDrills[drill.drill_uid]
         const inProgress = progressDrills[drill.drill_uid]
         const statusText = completed ? 'Completed' : inProgress ? 'In progress' : 'Not started'
         const ctaText = completed ? 'Review exercise' : inProgress ? 'Continue exercise' : 'Start exercise'
         return <article key={drill.drill_uid} className="drill-card"><h3>{drill.title}</h3><p>{drill.description}</p><div className="drill-meta-row"><p className="meta"><span className="meta-label">Questions:</span> {drill.question_count}</p><p className="meta"><span className="meta-label">Status:</span> {statusText}</p>{completed?.summary ? <p className="meta"><span className="meta-label">Score:</span> {completed.summary.website_score}/{completed.summary.max_score}</p> : null}</div><button type="button" onClick={() => { setHashWarning(''); setExerciseHash(drill.drill_uid) }} disabled={drillLoading}>{ctaText}</button></article>
-      }) : <p className="status">No exercises found.</p>}</div> : null}
+      }) : <p className="status">No published exercises yet.</p>}</div> : null}
     {drillLoading ? <p className="status">Loading exercise...</p> : null}
     {drillError ? <p className="error" role="alert">{drillError}</p> : null}
     {selectedDrill ? <form className="drill-form" onSubmit={submitDrill}><h2>{selectedDrill.title}</h2><p>{selectedDrill.description}</p><p className="meta">Question count: {selectedDrill.question_count}</p>{isSelectedDrillCompleted ? <p className="status-badge">Completed (read only)</p> : null}
