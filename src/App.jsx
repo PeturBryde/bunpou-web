@@ -12,7 +12,13 @@ import {
   markAttemptsExported,
   markExportBatchImported,
 } from './lib/drillStorage'
-import { loadPublishedExercises } from './lib/exerciseStorage'
+import {
+  archiveExercise,
+  loadAllExercises,
+  loadPublishedExercises,
+  publishExercise,
+  saveExercise,
+} from './lib/exerciseStorage'
 
 function isAttemptGraded(attempt) {
   return Boolean(attempt?.completed && attempt?.summary && Array.isArray(attempt?.results))
@@ -151,6 +157,50 @@ function downloadJsonFile(filename, payload) {
   URL.revokeObjectURL(url)
 }
 
+function validateExerciseJson(rawInput) {
+  let parsed
+  try {
+    parsed = JSON.parse(rawInput)
+  } catch (error) {
+    return { ok: false, parsed: null, message: `Invalid JSON: ${error.message}` }
+  }
+
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    return { ok: false, parsed: null, message: 'Exercise JSON must be an object at the root.' }
+  }
+  if (typeof parsed.exercise_uid !== 'string' || parsed.exercise_uid.trim().length === 0) {
+    return { ok: false, parsed: null, message: 'exercise_uid is required and must be a non-empty string.' }
+  }
+  if (!parsed.title) parsed.title = parsed.exercise_uid
+  if (!Array.isArray(parsed.questions)) {
+    return { ok: false, parsed: null, message: 'questions is required and must be an array.' }
+  }
+
+  for (let index = 0; index < parsed.questions.length; index += 1) {
+    const question = parsed.questions[index]
+    const label = `Question ${index + 1}`
+    if (!question || typeof question !== 'object' || Array.isArray(question)) return { ok: false, parsed: null, message: `${label} must be an object.` }
+    if (!(typeof question.question_id === 'string' && question.question_id) && !(typeof question.id === 'string' && question.id)) return { ok: false, parsed: null, message: `${label} needs question_id or id.` }
+    if (typeof question.type !== 'string' || !question.type) return { ok: false, parsed: null, message: `${label} is missing type.` }
+    if (typeof question.prompt !== 'string' || !question.prompt.trim()) return { ok: false, parsed: null, message: `${label} is missing prompt.` }
+    if (!question.target_uid && !question.target_item_uid) return { ok: false, parsed: null, message: `${label} must include target_uid or target_item_uid.` }
+
+    if (question.type === 'multiple_choice') {
+      if (!Array.isArray(question.choices) || question.choices.length === 0) return { ok: false, parsed: null, message: `${label} multiple_choice must include a non-empty choices array.` }
+      const hasAnswer = Boolean(question.answer?.correct_choice_id || question.correct_choice_id || question.correct_answer)
+      if (!hasAnswer) return { ok: false, parsed: null, message: `${label} multiple_choice must include answer info (for example answer.correct_choice_id).` }
+    }
+
+    if (question.type === 'short_completion') {
+      const hasAcceptedAnswers = Array.isArray(question.answer?.accepted_answers) && question.answer.accepted_answers.length > 0
+      const hasAnswerInfo = Boolean(question.answer?.text || question.answer?.value || question.correct_answer)
+      if (!hasAcceptedAnswers && !hasAnswerInfo) return { ok: false, parsed: null, message: `${label} short_completion needs accepted answers or answer info.` }
+    }
+  }
+
+  return { ok: true, parsed, message: `Validation passed: ${parsed.questions.length} question(s).` }
+}
+
 export default function App() {
   const EXERCISE_HASH_KEY = 'exercise'
   const [email, setEmail] = useState('')
@@ -161,8 +211,14 @@ export default function App() {
   const [error, setError] = useState('')
 
   const [publishedExercises, setPublishedExercises] = useState([])
+  const [allExercises, setAllExercises] = useState([])
   const [exercisesLoading, setExercisesLoading] = useState(false)
   const [exercisesError, setExercisesError] = useState('')
+  const [managementLoading, setManagementLoading] = useState(false)
+  const [managementError, setManagementError] = useState('')
+  const [managementMessage, setManagementMessage] = useState('')
+  const [exerciseJsonText, setExerciseJsonText] = useState('')
+  const [validatedExercise, setValidatedExercise] = useState(null)
 
   const [selectedDrill, setSelectedDrill] = useState(null)
   const [drillLoading, setDrillLoading] = useState(false)
@@ -212,7 +268,10 @@ export default function App() {
   useEffect(() => {
     if (!user) {
       setPublishedExercises([])
+      setAllExercises([])
       setExercisesError('')
+      setManagementError('')
+      setManagementMessage('')
       setSelectedDrill(null)
       setDrillError('')
       setAnswers({})
@@ -233,47 +292,10 @@ export default function App() {
     setProgressDrills(Object.fromEntries(Object.entries(localProgress).filter(([, progress]) => Boolean(progress?.answers))))
 
     let active = true
-    setExercisesLoading(true)
-    setExercisesError('')
-
-    loadPublishedExercises(supabase, user.id)
-      .then((exerciseRows) => {
-        if (!active) return
-        const mappedExercises = exerciseRows.map((row) => {
-          const exerciseJson = typeof row.exercise_json === 'object' && row.exercise_json !== null ? row.exercise_json : {}
-          const drillUid = row.exercise_uid ?? exerciseJson.exercise_uid
-          const version = exerciseJson.version ?? row.exercise_version ?? 1
-          const title = row.title ?? exerciseJson.title ?? drillUid ?? 'Untitled exercise'
-          const description = row.description ?? exerciseJson.description ?? ''
-          const level = row.level ?? exerciseJson.level ?? null
-          const questions = Array.isArray(exerciseJson.questions) ? exerciseJson.questions : []
-
-          return {
-            ...exerciseJson,
-            drill_uid: drillUid,
-            version,
-            title,
-            description,
-            level,
-            questions,
-            question_count: questions.length,
-            exercise_uid: row.exercise_uid,
-            exercise_version: row.exercise_version,
-            status: row.status,
-            updated_at: row.updated_at,
-          }
-        })
-        setPublishedExercises(mappedExercises)
-      })
-      .catch((publishedLoadError) => {
-        if (!active) return
-        setExercisesError(`Could not load published exercises: ${publishedLoadError.message}`)
-        setPublishedExercises([])
-      })
-      .finally(() => {
-        if (!active) return
-        setExercisesLoading(false)
-      })
+    refreshExerciseLists().catch((loadError) => {
+      if (!active) return
+      setExercisesError(`Could not load exercises: ${loadError.message}`)
+    })
 
     Promise.allSettled([
       loadProgressMap(supabase, user.id),
@@ -296,6 +318,44 @@ export default function App() {
       active = false
     }
   }, [user])
+
+  async function refreshExerciseLists() {
+    if (!user?.id) return
+    setExercisesLoading(true)
+    setManagementLoading(true)
+    setExercisesError('')
+    setManagementError('')
+
+    const [publishedResult, allResult] = await Promise.allSettled([
+      loadPublishedExercises(supabase, user.id),
+      loadAllExercises(supabase, user.id),
+    ])
+
+    if (publishedResult.status === 'fulfilled') {
+      const mappedExercises = publishedResult.value.map((row) => {
+        const exerciseJson = typeof row.exercise_json === 'object' && row.exercise_json !== null ? row.exercise_json : {}
+        const drillUid = row.exercise_uid ?? exerciseJson.exercise_uid
+        const version = exerciseJson.version ?? row.exercise_version ?? 1
+        const title = row.title ?? exerciseJson.title ?? drillUid ?? 'Untitled exercise'
+        const description = row.description ?? exerciseJson.description ?? ''
+        const level = row.level ?? exerciseJson.level ?? null
+        const questions = Array.isArray(exerciseJson.questions) ? exerciseJson.questions : []
+        return { ...exerciseJson, drill_uid: drillUid, version, title, description, level, questions, question_count: questions.length, exercise_uid: row.exercise_uid, exercise_version: row.exercise_version, status: row.status, updated_at: row.updated_at }
+      })
+      setPublishedExercises(mappedExercises)
+    } else {
+      setPublishedExercises([])
+      setExercisesError(`Could not load published exercises: ${publishedResult.reason.message}`)
+    }
+
+    if (allResult.status === 'fulfilled') setAllExercises(allResult.value)
+    else {
+      setAllExercises([])
+      setManagementError(`Could not load exercise management list: ${allResult.reason.message}`)
+    }
+    setExercisesLoading(false)
+    setManagementLoading(false)
+  }
 
   async function refreshUnimportedAttempts() {
     if (!user?.id) return
@@ -622,6 +682,72 @@ export default function App() {
     setSubmitMessage('')
   }
 
+  function handleValidateExercise() {
+    const result = validateExerciseJson(exerciseJsonText)
+    if (result.ok) {
+      setValidatedExercise(result.parsed)
+      setManagementMessage(result.message)
+      setManagementError('')
+    } else {
+      setValidatedExercise(null)
+      setManagementMessage('')
+      setManagementError(result.message)
+    }
+  }
+
+  async function handleSaveExercise(nextStatus) {
+    if (!user?.id) return
+    const result = validateExerciseJson(exerciseJsonText)
+    if (!result.ok) {
+      setValidatedExercise(null)
+      setManagementError(result.message)
+      return
+    }
+
+    try {
+      setManagementLoading(true)
+      setManagementError('')
+      const saved = await saveExercise(supabase, user.id, result.parsed, nextStatus)
+      setManagementMessage(`Saved ${saved.exercise_uid} as ${saved.status}.`)
+      setValidatedExercise(result.parsed)
+      await refreshExerciseLists()
+    } catch (saveError) {
+      setManagementError(`Could not save exercise: ${saveError.message}`)
+    } finally {
+      setManagementLoading(false)
+    }
+  }
+
+  async function handlePublishExisting(exerciseUid) {
+    if (!user?.id) return
+    try {
+      setManagementLoading(true)
+      setManagementError('')
+      await publishExercise(supabase, user.id, exerciseUid)
+      setManagementMessage(`Published ${exerciseUid}.`)
+      await refreshExerciseLists()
+    } catch (publishError) {
+      setManagementError(`Could not publish ${exerciseUid}: ${publishError.message}`)
+    } finally {
+      setManagementLoading(false)
+    }
+  }
+
+  async function handleArchiveExisting(exerciseUid) {
+    if (!user?.id) return
+    try {
+      setManagementLoading(true)
+      setManagementError('')
+      await archiveExercise(supabase, user.id, exerciseUid)
+      setManagementMessage(`Archived ${exerciseUid}.`)
+      await refreshExerciseLists()
+    } catch (archiveError) {
+      setManagementError(`Could not archive ${exerciseUid}: ${archiveError.message}`)
+    } finally {
+      setManagementLoading(false)
+    }
+  }
+
   return <main className="page"><section className="card" aria-busy={loading || submitting}><h1>Bunpou Web</h1><p className="subtitle">Japanese grammar exercises</p>
   {loading ? <p className="status">Loading session...</p> : user ? <div className="dashboard">
     <p className="status">Signed in as <strong>{user.email}</strong></p>
@@ -662,6 +788,6 @@ export default function App() {
       <div className="button-row"><button type="button" onClick={clearExerciseHash}>Back to exercise list</button><button type="button" onClick={clearAnswers} disabled={isSelectedDrillCompleted || submitting}>Clear answers</button><button type="submit" disabled={isSelectedDrillCompleted || submitting}>{submitting ? 'Submitting…' : 'Submit'}</button></div>
       {submitMessage ? <p className="status success">{submitMessage}</p> : null}
     </form> : null}
-    <button type="button" onClick={handleLogout} disabled={submitting}>{submitting ? 'Logging out...' : 'Logout'}</button></div> : <form className="form" onSubmit={handleSubmit}><label htmlFor="email">Email</label><input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /><label htmlFor="password">Password</label><input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /><button type="submit" disabled={submitting}>{submitting ? 'Logging in...' : 'Login'}</button></form>}
+    <section className="management-panel" aria-live="polite"><h2>Exercise management (debug/admin)</h2><p className="status">Manage drafts, publish, and archive Supabase-backed exercises.</p><textarea value={exerciseJsonText} onChange={(event) => setExerciseJsonText(event.target.value)} placeholder="Paste exercise JSON here" rows={10} /><div className="button-row"><button type="button" onClick={handleValidateExercise} disabled={managementLoading}>Validate</button><button type="button" onClick={() => handleSaveExercise('draft')} disabled={managementLoading}>Save draft</button><button type="button" onClick={() => handleSaveExercise('published')} disabled={managementLoading}>Save and publish</button></div>{validatedExercise ? <p className="status">Ready to save: <strong>{validatedExercise.title ?? validatedExercise.exercise_uid}</strong> ({validatedExercise.exercise_uid})</p> : null}{managementMessage ? <p className="status success">{managementMessage}</p> : null}{managementError ? <p className="error" role="alert">{managementError}</p> : null}{managementLoading ? <p className="status">Updating exercise list...</p> : null}<div className="management-list"><h3>Existing exercises</h3>{allExercises.length ? allExercises.map((exercise) => { const count = Array.isArray(exercise.exercise_json?.questions) ? exercise.exercise_json.questions.length : 0; return <article key={exercise.exercise_uid} className="drill-card"><p><strong>{exercise.title ?? exercise.exercise_uid}</strong></p><p className="meta">UID: {exercise.exercise_uid}</p><p className="meta">Level: {exercise.level ?? '—'} • Status: {exercise.status} • Version: {exercise.exercise_version}</p><p className="meta">Updated: {new Date(exercise.updated_at).toLocaleString()} • Questions: {count}</p><div className="button-row">{exercise.status !== 'published' ? <button type="button" onClick={() => handlePublishExisting(exercise.exercise_uid)} disabled={managementLoading}>Publish</button> : null}{exercise.status !== 'archived' ? <button type="button" onClick={() => handleArchiveExisting(exercise.exercise_uid)} disabled={managementLoading}>Archive</button> : null}</div></article> }) : <p className="status">No exercises found in Supabase yet.</p>}</div></section><button type="button" onClick={handleLogout} disabled={submitting}>{submitting ? 'Logging out...' : 'Logout'}</button></div> : <form className="form" onSubmit={handleSubmit}><label htmlFor="email">Email</label><input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /><label htmlFor="password">Password</label><input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /><button type="submit" disabled={submitting}>{submitting ? 'Logging in...' : 'Login'}</button></form>}
   {error ? <p className="error" role="alert">{error}</p> : null}</section></main>
 }
