@@ -2,12 +2,27 @@
 
 Experimental frontend for grammar exercises with progress tracking.
 
+## Runtime exercise source of truth
+
+Runtime exercise loading is Supabase-backed via `public.exercises` (published rows) and **not** static files in `public/drills`.
+New exercises should be created/uploaded through the website upload UI.
+
 In-progress drill answers are persisted to Supabase `public.drill_progress` for signed-in users, with `localStorage` kept as a fallback/cache during development.
 
 Completed attempts are now saved to Supabase `public.drill_attempts`. Retakes are intentionally blocked by the database unique constraint on `(user_id, drill_uid)`, and the existing completed attempt is shown as read-only. Completed attempts can also be exported to ChatGPT for external tracking, and import confirmation is tracked per attempt via `import_confirmed_at`.
 Newly submitted attempt results now store a per-question metadata snapshot in `result_json.results` so exported rows are self-contained for tracker import (including prompt/target metadata, answer metadata, explanation, validity, and points).
 
 Exercise/question JSON and exported per-question result snapshots use `target_uid` as the grammar target identifier. The deprecated `target_item_uid` field is rejected during upload validation.
+
+### Exercise JSON requirements
+
+- Top-level exercise identifier must be `exercise_uid`.
+- Each question must include `target_uid`.
+- `target_item_uid` is deprecated and rejected during upload validation.
+
+### Compatibility naming note
+
+The app maps `public.exercises.exercise_uid` to runtime `drill_uid` for compatibility, because existing `public.drill_progress` and `public.drill_attempts` storage still uses the `drill_uid` column name.
 
 ## Local development
 
