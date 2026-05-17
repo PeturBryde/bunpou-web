@@ -128,7 +128,6 @@ label {
 }
 
 input,
-textarea,
 button {
   width: 100%;
   padding: 0.7rem 0.8rem;
@@ -152,13 +151,6 @@ input[type='radio'] {
 input {
   background: rgba(255, 255, 255, 0.18);
   color: inherit;
-}
-
-textarea {
-  background: rgba(255, 255, 255, 0.18);
-  color: inherit;
-  resize: vertical;
-  min-height: 180px;
 }
 
 button {
@@ -283,11 +275,6 @@ details pre {
   border-radius: 10px;
   padding: 0.8rem;
   background: rgba(255, 255, 255, 0.05);
-  display: grid;
-  gap: 0.65rem;
-}
-
-.management-panel {
   display: grid;
   gap: 0.75rem;
 }
